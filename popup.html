@@ -2,17 +2,40 @@
 <html>
 <head>
   <title>Bangla Translator</title>
-  <style>
-    body {
-      width: 200px;
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 10px;
-    }
-  </style>
+  <link rel="stylesheet" href="popup_styles.css">
 </head>
 <body>
-  <h3>Bangla Translator</h3>
-  <p>Select any English text on a page to see its Bangla translation.</p>
+  <h3>Simple Text Translator</h3>
+  <p>Select any text on a page to see its translation.</p>
+
+  <div class="control-group" style="display: flex; justify-content: space-between; align-items: center;">
+    <label for="toggle-translate">Enable Translation:</label>
+    <label class="switch">
+      <input type="checkbox" id="toggle-translate">
+      <span class="slider round"></span>
+    </label>
+  </div>
+
+  <div class="control-group">
+    <label for="from-lang-select">Translate From:</label>
+    <select id="from-lang-select">
+      <!-- Common languages will be populated here by JavaScript -->
+    </select>
+  </div>
+
+  <div>
+    <button id="swap-languages">&#8644;</button>
+  </div>
+
+  <div class="control-group">
+    <label for="to-lang-select">Translate To:</label>
+    <select id="to-lang-select">
+      <!-- Common languages will be populated here by JavaScript -->
+    </select>
+  </div>
+
+  <div id="message-area"></div>
+
+  <script src="popup.js"></script>
 </body>
 </html>

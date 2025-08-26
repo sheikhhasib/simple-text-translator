@@ -1,18 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "English to Bangla Translator",
+  "name": "Simple Text Translator",
   "version": "1.0",
-  "description": "Select English text to see the Bangla translation.",
+  "description": "Select any text on a page to see its translation.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "http://*/*",
+    "https://*/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "http://*/*",
+        "https://*/*"
       ],
       "js": [
         "content.js"

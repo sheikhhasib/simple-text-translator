@@ -1,0 +1,29 @@
+# Node modules
+node_modules/
+
+# macOS specific files
+.DS_Store
+
+# Chrome Extension specific files
+*.crx
+*.zip
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build artifacts
+build/
+dist/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# Thumbnails
+.thumbnails/
