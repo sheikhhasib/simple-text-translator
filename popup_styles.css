@@ -1,8 +1,9 @@
 body {
-  width: 250px; /* Increased width to accommodate new elements */
+  width: 250px;
   font-family: Arial, sans-serif;
   text-align: center;
   padding: 10px;
+  background-color: #e8eaf6;
 }
 
 .header {
