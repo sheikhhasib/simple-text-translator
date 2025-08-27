@@ -10,7 +10,7 @@ document.addEventListener('mouseup', function(e) {
   if (selectedText.length > 0 && /\S/.test(selectedText)) {
     // Request preferences from background script
     chrome.runtime.sendMessage({ action: "getTranslationPreferences" }, function(items) {
-      const fromLang  = items.fromLanguage || 'auto'; // Default to auto-detect
+      const fromLang  = items.fromLanguage || 'en'; // Default to English
       const toLang    = items.toLanguage || 'bn'; // Default to Bangla
       const isEnabled = (typeof items.isEnabled === 'boolean') ? items.isEnabled : true; // Default to enabled
 

@@ -4,6 +4,17 @@ body {
   text-align: center;
   padding: 10px;
 }
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#settings-icon:hover svg path {
+  fill: #4CAF50;
+}
+
 .control-group {
   text-align: left;
 }
@@ -81,11 +92,11 @@ button:hover {
 }
 
 input:checked + .slider {
-  background-color: #2196F3; /* Material Blue */
+  background-color: #4CAF50;
 }
 
 input:focus + .slider {
-  box-shadow: 0 0 1px #2196F3;
+  box-shadow: 0 0 1px #4CAF50;
 }
 
 input:checked + .slider:before {
