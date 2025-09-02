@@ -77,7 +77,7 @@ document.addEventListener('mouseup', function(e) {
 
 document.addEventListener('mousedown', function(e) {
   // Don't hide tooltip if clicking on the tooltip itself or its dropdown elements
-  if (tooltip && (tooltip.contains(e.target) || e.target.closest('.translation-tooltip'))) {
+  if (tooltip && tooltip.tooltipElement && tooltip.tooltipElement.contains(e.target)) {
     return;
   }
 
@@ -90,7 +90,7 @@ document.addEventListener('mousedown', function(e) {
 // Prevent tooltip from hiding on mouse movement when interacting with dropdowns
 document.addEventListener('mousemove', function(e) {
   // If tooltip is visible and mouse is over tooltip or its elements, don't hide
-  if (isTooltipVisible && tooltip && (tooltip.contains(e.target) || e.target.closest('.translation-tooltip'))) {
+  if (isTooltipVisible && tooltip && tooltip.tooltipElement && tooltip.tooltipElement.contains(e.target)) {
     return;
   }
 });
@@ -98,16 +98,11 @@ document.addEventListener('mousemove', function(e) {
 // Prevent original mouseup handler from triggering when interacting with tooltip
 document.addEventListener('mouseup', function(e) {
   // If clicking on tooltip, prevent the original translation logic
-  if (tooltip && (tooltip.contains(e.target) || e.target.closest('.translation-tooltip'))) {
+  if (tooltip && tooltip.tooltipElement && tooltip.tooltipElement.contains(e.target)) {
     e.stopPropagation();
     e.stopImmediatePropagation();
     return;
   }
-});
-
-// Hide tooltip when scrolling
-document.addEventListener('scroll', function() {
-  hideTooltip();
 });
 
 // Hide tooltip when window is resized
@@ -116,70 +111,375 @@ window.addEventListener('resize', function() {
 });
 
 function hideTooltip() {
-  if (tooltip) {
-    tooltip.style.display = 'none';
-    tooltip.classList.remove('tooltip-visible');
+  if (tooltip && tooltip.tooltipElement) {
+    tooltip.tooltipElement.style.display = 'none';
+    tooltip.tooltipElement.classList.remove('tooltip-visible');
     isTooltipVisible = false;
   }
 }
 
 function showTooltip(x, y, text, sourceText, fromLang, toLang) {
   if (!tooltip) {
+    // Create tooltip container
     tooltip = document.createElement('div');
-    tooltip.id = 'translation-tooltip';
-    tooltip.className = 'translation-tooltip';
+    tooltip.id = 'translation-tooltip-container';
+
+    // Create shadow root for style isolation
+    const shadowRoot = tooltip.attachShadow({ mode: 'closed' });
+
+    // Create styles for shadow DOM
+    const style = document.createElement('style');
+    style.textContent = `
+      /* Modern Translation Tooltip Styling */
+      .translation-tooltip {
+        position: absolute;
+        background: #2d3748;
+        color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.15);
+        z-index: 999999;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        font-size: 14px;
+        display: none;
+        max-width: 280px;
+        min-width: 260px;
+        width: 280px;
+        opacity: 0;
+        transform: translateY(10px) scale(0.95);
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        user-select: none;
+        pointer-events: auto;
+      }
+
+      .translation-tooltip.tooltip-visible {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+
+      .tooltip-content {
+        padding: 16px;
+      }
+
+      .language-container {
+        font-size: 10px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.9);
+        margin-bottom: 8px;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.15);
+        padding: 6px 8px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px;
+        width: 100%;
+        box-sizing: border-box;
+        flex-wrap: nowrap;
+      }
+
+      .source-lang-label {
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+      }
+
+      .lang-arrow {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 11px;
+        margin: 0 2px;
+        flex-shrink: 0;
+      }
+
+      .source-lang-select,
+      .target-lang-select {
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: #ffffff;
+        padding: 3px 4px;
+        border-radius: 4px;
+        font-size: 9px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        outline: none;
+        width: 45%;
+        max-width: 45%;
+        min-width: 0;
+        flex-shrink: 1;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+
+      .source-lang-select:hover,
+      .target-lang-select:hover {
+        background: rgba(255, 255, 255, 0.3);
+        border-color: rgba(255, 255, 255, 0.5);
+      }
+
+      .source-lang-select:focus,
+      .target-lang-select:focus {
+        background: rgba(255, 255, 255, 0.3);
+        border-color: rgba(59, 130, 246, 0.8);
+        box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+      }
+
+      .source-lang-select option,
+      .target-lang-select option {
+        background: #2d3748;
+        color: #ffffff;
+        padding: 3px;
+        font-size: 12px;
+      }
+
+      .translation-text {
+        font-size: 14px;
+        line-height: 1.4;
+        margin-bottom: 12px;
+        word-wrap: break-word;
+        color: #ffffff;
+        font-weight: 500;
+      }
+
+      .tooltip-buttons {
+        display: flex;
+        justify-content: center;
+        margin-top: 12px;
+      }
+
+      .tooltip-btn {
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+        padding: 6px 16px;
+        margin-bottom: 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        backdrop-filter: blur(10px);
+      }
+
+      .tooltip-btn:hover {
+        background: rgba(255, 255, 255, 0.25);
+        border-color: rgba(255, 255, 255, 0.3);
+        color: #ffffff;
+        transform: translateY(-1px);
+      }
+
+      .tooltip-btn:active {
+        transform: translateY(0);
+      }
+
+      .tooltip-btn.success {
+        background: rgba(59, 130, 246, 0.6);
+        border-color: rgba(59, 130, 246, 0.7);
+        color: #ffffff;
+      }
+
+      .tooltip-btn.success:hover {
+        background: rgba(59, 130, 246, 0.75);
+      }
+
+      .tooltip-btn.error {
+        background: rgba(244, 67, 54, 0.8);
+        border-color: rgba(244, 67, 54, 0.9);
+      }
+
+      .tooltip-btn.error:hover {
+        background: rgba(244, 67, 54, 0.9);
+      }
+
+      .loading-indicator {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 8px;
+      }
+
+      .spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top: 2px solid #ffffff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      .translation-tooltip::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 0;
+        height: 0;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-bottom: 6px solid #2d3748;
+      }
+
+      @media (max-width: 480px) {
+        .translation-tooltip {
+          max-width: 260px;
+          min-width: 240px;
+          width: 260px;
+          font-size: 13px;
+        }
+
+        .tooltip-content {
+          padding: 10px;
+        }
+
+        .language-container {
+          padding: 4px 6px;
+          font-size: 9px;
+        }
+
+        .source-lang-select,
+        .target-lang-select {
+          font-size: 8px;
+          padding: 2px 3px;
+        }
+
+        .translation-text {
+          font-size: 13px;
+        }
+
+        .tooltip-btn {
+          padding: 6px 12px;
+          font-size: 11px;
+        }
+      }
+
+      @media (prefers-contrast: high) {
+        .translation-tooltip {
+          background: #000000;
+          border: 2px solid #ffffff;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+        }
+
+        .language-container {
+          background: #ffffff;
+          color: #000000;
+        }
+
+        .tooltip-btn {
+          background: #ffffff;
+          color: #000000;
+          border: 1px solid #000000;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .translation-tooltip {
+          transition: none;
+        }
+
+        .tooltip-btn {
+          transition: none;
+        }
+
+        .spinner {
+          animation: none;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .translation-tooltip {
+          background: #1a202c;
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .translation-tooltip::before {
+          border-bottom-color: #1a202c;
+        }
+      }
+    `;
+
+    // Create the actual tooltip element within shadow DOM
+    const tooltipElement = document.createElement('div');
+    tooltipElement.className = 'translation-tooltip';
+
+    // Append styles and tooltip to shadow root
+    shadowRoot.appendChild(style);
+    shadowRoot.appendChild(tooltipElement);
+
+    // Store references for easy access
+    tooltip.shadowRoot = shadowRoot;
+    tooltip.tooltipElement = tooltipElement;
+
+    // Set positioning style on the container (outside shadow DOM)
+    tooltip.style.position = 'absolute';
+    tooltip.style.zIndex = '999999';
+    tooltip.style.pointerEvents = 'none';
+
     document.body.appendChild(tooltip);
 
-    // Prevent events from propagating
-    tooltip.addEventListener('mousedown', function(e) {
+    // Prevent events from propagating (attach to shadow DOM tooltip element)
+    tooltipElement.addEventListener('mousedown', function(e) {
       e.stopPropagation();
       e.stopImmediatePropagation();
     });
 
-    tooltip.addEventListener('mouseup', function(e) {
+    tooltipElement.addEventListener('mouseup', function(e) {
       e.stopPropagation();
       e.stopImmediatePropagation();
     });
 
-    tooltip.addEventListener('click', function(e) {
+    tooltipElement.addEventListener('click', function(e) {
       e.stopPropagation();
       e.stopImmediatePropagation();
     });
 
-    tooltip.addEventListener('mousemove', function(e) {
+    tooltipElement.addEventListener('mousemove', function(e) {
       e.stopPropagation();
       e.stopImmediatePropagation();
     });
 
-    tooltip.addEventListener('mouseenter', function(e) {
+    tooltipElement.addEventListener('mouseenter', function(e) {
       e.stopPropagation();
       e.stopImmediatePropagation();
     });
 
-    tooltip.addEventListener('mouseover', function(e) {
+    tooltipElement.addEventListener('mouseover', function(e) {
       e.stopPropagation();
       e.stopImmediatePropagation();
     });
 
-    tooltip.addEventListener('selectstart', function(e) {
+    tooltipElement.addEventListener('selectstart', function(e) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
     });
 
-    tooltip.addEventListener('select', function(e) {
+    tooltipElement.addEventListener('select', function(e) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
     });
   }
 
+  // Get references to shadow DOM elements
+  const tooltipElement = tooltip.tooltipElement;
+
   // Store current language state in tooltip data attributes
-  tooltip.dataset.currentFromLang = fromLang;
-  tooltip.dataset.currentToLang = toLang;
+  tooltipElement.dataset.currentFromLang = fromLang;
+  tooltipElement.dataset.currentToLang = toLang;
 
   // Clear previous content
-  tooltip.innerHTML = '';
+  tooltipElement.innerHTML = '';
 
   // Create tooltip content structure
   const tooltipContent = document.createElement('div');
@@ -266,15 +566,15 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
 
         const newSourceLang = e.target.value;
         const currentTargetLang = targetLangSelect.value;
-        const currentFromLang = tooltip.dataset.currentFromLang;
+        const currentFromLang = tooltipElement.dataset.currentFromLang;
 
         // Only translate if there's an actual change AND languages are different
         if (newSourceLang !== currentFromLang && newSourceLang !== currentTargetLang) {
           // Update stored language state
-          tooltip.dataset.currentFromLang = newSourceLang;
+          tooltipElement.dataset.currentFromLang = newSourceLang;
 
           // Show loading state
-          const translationTextEl = tooltip.querySelector('.translation-text');
+          const translationTextEl = tooltipElement.querySelector('.translation-text');
           if (translationTextEl) {
             translationTextEl.textContent = 'Translating...';
           }
@@ -319,15 +619,15 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
 
         const newTargetLang = e.target.value;
         const currentSourceLang = sourceLangSelect.value;
-        const currentToLang = tooltip.dataset.currentToLang;
+        const currentToLang = tooltipElement.dataset.currentToLang;
 
         // Only translate if there's an actual change AND languages are different
         if (newTargetLang !== currentToLang && newTargetLang !== currentSourceLang) {
           // Update stored language state
-          tooltip.dataset.currentToLang = newTargetLang;
+          tooltipElement.dataset.currentToLang = newTargetLang;
 
           // Show loading state
-          const translationTextEl = tooltip.querySelector('.translation-text');
+          const translationTextEl = tooltipElement.querySelector('.translation-text');
           if (translationTextEl) {
             translationTextEl.textContent = 'Translating...';
           }
@@ -439,7 +739,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
       e.preventDefault();
 
       // Always get the current translation text from the tooltip
-      const currentTranslationEl = tooltip.querySelector('.translation-text');
+      const currentTranslationEl = tooltipElement.querySelector('.translation-text');
       const currentTranslationText = currentTranslationEl ? currentTranslationEl.textContent : text;
 
       navigator.clipboard.writeText(currentTranslationText).then(() => {
@@ -472,21 +772,21 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
     tooltipContent.appendChild(loader);
   }
 
-  tooltip.appendChild(tooltipContent);
+  tooltipElement.appendChild(tooltipContent);
 
   // Position the tooltip
   positionTooltip(x, y);
 
   // Show tooltip with animation
-  tooltip.style.display = 'block';
+  tooltipElement.style.display = 'block';
   // Force reflow for animation
-  tooltip.offsetHeight;
-  tooltip.classList.add('tooltip-visible');
+  tooltipElement.offsetHeight;
+  tooltipElement.classList.add('tooltip-visible');
   isTooltipVisible = true;
 }
 
 function positionTooltip(x, y) {
-  if (!tooltip) return;
+  if (!tooltip || !tooltip.tooltipElement) return;
 
   // Get selection rectangle for better positioning
   const selection = window.getSelection();
@@ -502,16 +802,16 @@ function positionTooltip(x, y) {
   let tooltipY = rect.bottom + window.scrollY + 8; // 8px below selection
 
   // Temporarily show tooltip to get dimensions
-  tooltip.style.visibility = 'hidden';
-  tooltip.style.display = 'block';
+  tooltip.tooltipElement.style.visibility = 'hidden';
+  tooltip.tooltipElement.style.display = 'block';
 
   const tooltipRect = tooltip.getBoundingClientRect();
   const tooltipWidth = tooltipRect.width;
   const tooltipHeight = tooltipRect.height;
 
   // Hide again
-  tooltip.style.visibility = 'visible';
-  tooltip.style.display = 'none';
+  tooltip.tooltipElement.style.visibility = 'visible';
+  tooltip.tooltipElement.style.display = 'none';
 
   // Adjust horizontal position
   if (tooltipX + tooltipWidth > window.innerWidth + window.scrollX) {
