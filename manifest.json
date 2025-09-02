@@ -5,7 +5,8 @@
   "description": "Select any text on a page to see its translation.",
   "permissions": [
     "storage",
-    "tabs"
+    "tabs",
+    "contextMenus"
   ],
   "host_permissions": [
     "http://*/*",

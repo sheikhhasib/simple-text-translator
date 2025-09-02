@@ -657,3 +657,137 @@ function saveTranslationToHistory(sourceText, translatedText, sourceLang, target
   });
 }
 
+// Variable to store the last right-clicked element
+let lastRightClickedElement = null;
+
+// Store the element that was right-clicked
+document.addEventListener('contextmenu', function(e) {
+  lastRightClickedElement = e.target;
+});
+
+// Listen for messages from background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'translateElement') {
+    translateElementText();
+  }
+});
+
+// Function to extract and translate text from the right-clicked element
+function translateElementText() {
+  if (!lastRightClickedElement) {
+    console.warn('No element was right-clicked');
+    return;
+  }
+
+  // Extract text from the element
+  const elementText = extractTextFromElement(lastRightClickedElement);
+
+  if (!elementText || elementText.trim().length === 0) {
+    console.warn('No text found in the clicked element');
+    return;
+  }
+
+  // Get translation preferences and translate
+  chrome.runtime.sendMessage({ action: "getTranslationPreferences" }, function(items) {
+    if (chrome.runtime.lastError) {
+      console.error('Error getting translation preferences:', chrome.runtime.lastError);
+      return;
+    }
+
+    if (!items || typeof items !== 'object') {
+      console.warn('Invalid preferences response, using defaults');
+      items = {};
+    }
+
+    const fromLang = items.fromLanguage || 'en';
+    const toLang = items.toLanguage || 'bn';
+    const isEnabled = (typeof items.isEnabled === 'boolean') ? items.isEnabled : true;
+
+    if (!isEnabled) {
+      console.log('Translation is disabled');
+      return;
+    }
+
+    // Increment translation ID for this request
+    const translationId = ++currentTranslationId;
+
+    // Get element position for tooltip placement
+    const rect = lastRightClickedElement.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top;
+
+    // Show translating tooltip
+    showTooltip(x, y, "Translating...", elementText, fromLang, toLang);
+
+    // Translate the text
+    translateText(elementText, fromLang, toLang, translationId)
+      .then(translation => {
+        if (translationId === currentTranslationId && translation) {
+          showTooltip(x, y, translation, elementText, fromLang, toLang);
+
+          // Save successful translation to history
+          if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
+            saveTranslationToHistory(elementText, translation, fromLang, toLang);
+          }
+        }
+      })
+      .catch(error => {
+        if (translationId === currentTranslationId) {
+          console.error("Element translation error:", error);
+          showTooltip(x, y, "Translation failed", elementText, fromLang, toLang);
+        }
+      });
+  });
+}
+
+// Function to extract text from an element
+function extractTextFromElement(element) {
+  if (!element) return '';
+
+  console.log({element});
+
+  // Handle input and textarea elements
+  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+    return element.value || element.placeholder || '';
+  }
+
+  // Handle elements with title or alt attributes
+  if (element.title) {
+    return element.title;
+  }
+
+  if (element.alt) {
+    return element.alt;
+  }
+
+  // Handle elements with aria-label
+  if (element.getAttribute('aria-label')) {
+    return element.getAttribute('aria-label');
+  }
+
+  // For other elements, get the text content
+  let text = element.textContent || element.innerText || '';
+
+  // If the element has no direct text, try to get text from immediate child elements
+  if (!text.trim() && element.children.length > 0) {
+    // Try to get text from the first text-containing child
+    for (let child of element.children) {
+      const childText = child.textContent || child.innerText || '';
+      if (childText.trim()) {
+        text = childText;
+        break;
+      }
+    }
+  }
+
+  // Clean up the text
+  text = text.trim();
+
+  // Limit text length to prevent very long translations
+  if (text.length > 500) {
+    text = text.substring(0, 500) + '...';
+  }
+
+  return text;
+}
+

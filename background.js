@@ -1,3 +1,23 @@
+// Create context menu on extension startup
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'translate-element',
+    title: 'Translate this element',
+    contexts: ['all']
+  });
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'translate-element') {
+    // Send message to content script to translate the clicked element
+    chrome.tabs.sendMessage(tab.id, {
+      action: 'translateElement',
+      frameId: info.frameId
+    });
+  }
+});
+
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   if (request.action === "getTranslationPreferences") {
     try {
