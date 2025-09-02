@@ -865,10 +865,160 @@ async function translateText(text, fromLang, toLang, requestId) {
     return "Source and target languages cannot be the same.";
   }
 
-  const langpair = `${normalizedFromLang}|${normalizedToLang}`;
+  // Check if text is longer than 500 characters
+  if (text.length > 500) {
+    console.log(`Long text detected (${text.length} chars), splitting into chunks...`);
+    return await translateLongText(text, normalizedFromLang, normalizedToLang, requestId);
+  }
+
+  // For text under 500 characters, use the original logic
+  return await translateSingleChunk(text, normalizedFromLang, normalizedToLang, requestId);
+}
+
+// Function to intelligently split long text and translate in chunks
+async function translateLongText(text, fromLang, toLang, requestId) {
+  // Split text intelligently based on sentence boundaries
+  const chunks = splitTextIntelligently(text);
+  console.log(`Split text into ${chunks.length} chunks:`, chunks.map(c => c.length));
+
+  const translatedChunks = [];
+
+  // Translate each chunk sequentially
+  for (let i = 0; i < chunks.length; i++) {
+    // Check if request is still valid before each chunk
+    if (requestId && requestId !== currentTranslationId) {
+      return null; // Request cancelled
+    }
+
+    console.log(`Translating chunk ${i + 1}/${chunks.length}: "${chunks[i].substring(0, 50)}..."`);
+
+    try {
+      const chunkTranslation = await translateSingleChunk(chunks[i], fromLang, toLang, requestId);
+
+      // Check if chunk translation failed
+      if (!chunkTranslation || chunkTranslation.includes('failed') || chunkTranslation.includes('error') || chunkTranslation.includes('limit exceeded')) {
+        console.error(`Chunk ${i + 1} translation failed:`, chunkTranslation);
+        return chunkTranslation; // Return the error message
+      }
+
+      translatedChunks.push(chunkTranslation);
+
+      // Add a small delay between requests to be respectful to the API
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
+      }
+    } catch (error) {
+      console.error(`Error translating chunk ${i + 1}:`, error);
+      return `Translation failed at segment ${i + 1}: ${error.message}`;
+    }
+  }
+
+  // Stitch the translated chunks back together
+  const finalTranslation = stitchTranslatedChunks(translatedChunks, chunks);
+  console.log('Final stitched translation:', finalTranslation);
+
+  return finalTranslation;
+}
+
+// Function to split text intelligently based on sentence boundaries
+function splitTextIntelligently(text) {
+  const chunks = [];
+  let remainingText = text.trim();
+
+  while (remainingText.length > 0) {
+    if (remainingText.length <= 500) {
+      // If remaining text is under limit, add it as final chunk
+      chunks.push(remainingText);
+      break;
+    }
+
+    // Find the best split point within 500 characters
+    let chunkEnd = 500;
+    let chunk = remainingText.substring(0, chunkEnd);
+
+    // Try to find sentence boundaries (periods, exclamation marks, question marks)
+    const sentenceEnders = ['. ', '! ', '? ', '.\n', '!\n', '?\n'];
+    let bestSplit = -1;
+
+    for (const ender of sentenceEnders) {
+      const lastIndex = chunk.lastIndexOf(ender);
+      if (lastIndex > 200 && lastIndex > bestSplit) { // Ensure minimum chunk size of 200 chars
+        bestSplit = lastIndex + ender.length;
+      }
+    }
+
+    // If no sentence boundary found, try other punctuation
+    if (bestSplit === -1) {
+      const otherPunctuation = ['; ', ', ', ': ', ' - ', ' – ', ' — '];
+      for (const punct of otherPunctuation) {
+        const lastIndex = chunk.lastIndexOf(punct);
+        if (lastIndex > 300 && lastIndex > bestSplit) { // Higher threshold for weaker boundaries
+          bestSplit = lastIndex + punct.length;
+        }
+      }
+    }
+
+    // If still no good split point, find last space
+    if (bestSplit === -1) {
+      const lastSpace = chunk.lastIndexOf(' ');
+      if (lastSpace > 200) {
+        bestSplit = lastSpace + 1;
+      } else {
+        // Force split at 500 chars if no good boundary found
+        bestSplit = 500;
+      }
+    }
+
+    // Extract the chunk
+    const finalChunk = remainingText.substring(0, bestSplit).trim();
+    if (finalChunk.length > 0) {
+      chunks.push(finalChunk);
+    }
+
+    // Update remaining text
+    remainingText = remainingText.substring(bestSplit).trim();
+  }
+
+  return chunks;
+}
+
+// Function to stitch translated chunks back together
+function stitchTranslatedChunks(translatedChunks, originalChunks) {
+  let result = '';
+
+  for (let i = 0; i < translatedChunks.length; i++) {
+    result += translatedChunks[i];
+
+    // Add appropriate spacing between chunks
+    if (i < translatedChunks.length - 1) {
+      // Check if original chunk ended with punctuation that creates natural breaks
+      const originalChunk = originalChunks[i];
+      const lastChar = originalChunk.charAt(originalChunk.length - 1);
+
+      if (lastChar.match(/[.!?]/)) {
+        result += ' '; // Add space after sentence-ending punctuation
+      } else if (lastChar.match(/[,;:-]/)) {
+        result += ' '; // Add space after other punctuation
+      } else if (!translatedChunks[i].endsWith(' ') && !translatedChunks[i + 1].startsWith(' ')) {
+        result += ' '; // Add space if neither chunk has spacing
+      }
+    }
+  }
+
+  return result.trim();
+}
+
+// Original translation function for single chunks
+async function translateSingleChunk(text, fromLang, toLang, requestId) {
+  // Check if this request is still valid
+  if (requestId && requestId !== currentTranslationId) {
+    return null; // Request cancelled
+  }
+
+  const langpair = `${fromLang}|${toLang}`;
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
 
-  console.log(`Translating: "${text}" from ${normalizedFromLang} to ${normalizedToLang}`);
+  console.log(`Translating chunk: "${text.substring(0, 50)}..." from ${fromLang} to ${toLang}`);
 
   try {
     const response = await fetch(url);
@@ -1087,11 +1237,6 @@ function extractTextFromElement(element) {
 
   // Clean up the text
   text = text.trim();
-
-  // Limit text length to prevent very long translations
-  if (text.length > 500) {
-    text = text.substring(0, 500) + '...';
-  }
 
   return text;
 }
