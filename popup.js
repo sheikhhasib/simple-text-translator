@@ -1,10 +1,17 @@
 document.addEventListener('DOMContentLoaded', function () {
+  // Get DOM elements with validation
   const fromLangSelect = document.getElementById('from-lang-select');
   const toLangSelect = document.getElementById('to-lang-select');
-  const messageArea = document.getElementById('message-area'); // Get message area
-  const swapLanguagesButton = document.getElementById('swap-languages'); // Get swap button
-  const toggleTranslate = document.getElementById('toggle-translate'); // Get toggle button
+  const messageArea = document.getElementById('message-area');
+  const swapLanguagesButton = document.getElementById('swap-languages');
+  const toggleTranslate = document.getElementById('toggle-translate');
   const settingsIcon = document.getElementById('settings-icon');
+
+  // Validate critical DOM elements
+  if (!fromLangSelect || !toLangSelect) {
+    console.error('Critical DOM elements not found: language select dropdowns');
+    return;
+  }
 
   // Tab elements
   const tabButtons = document.querySelectorAll('.tab-button');
@@ -76,9 +83,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 ${item.isFavorite ? '&#9733;' : '&#9734;'}
               </button>
               <button class="history-btn" data-action="copy" data-text="${item.translatedText.replace(/"/g, '&quot;')}">Copy</button>
-              <button class="history-btn" data-action="retranslate" data-source="${item.sourceText.replace(/"/g, '&quot;')}" data-from="${item.sourceLang}" data-to="${item.targetLang}">
-                &#8635;
-              </button>
               <button class="history-btn delete" data-action="delete" data-id="${item.id}">
                 &times;
               </button>
@@ -138,9 +142,7 @@ document.addEventListener('DOMContentLoaded', function () {
       case 'copy':
         copyToClipboardItem(e.target.dataset.text);
         break;
-      case 'retranslate':
-        retranslateItem(e.target.dataset.source, e.target.dataset.from, e.target.dataset.to);
-        break;
+
       case 'delete':
         deleteHistoryItemConfirm(e.target.dataset.id);
         break;
@@ -176,20 +178,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  function retranslateItem(sourceText, fromLang, toLang) {
-    // Switch to translate tab and fill in the values
-    document.querySelector('[data-tab="translate"]').click();
-    fromLangSelect.value = fromLang;
-    toLangSelect.value = toLang;
 
-    // Show user feedback
-    messageArea.textContent = `Ready to translate "${truncateText(sourceText, 30)}". Please select this text on a webpage.`;
-    messageArea.style.color = '#4CAF50';
-    setTimeout(() => {
-      messageArea.textContent = '';
-      messageArea.style.color = '';
-    }, 5000);
-  }
 
   function deleteHistoryItemConfirm(itemId) {
     if (confirm('Delete this translation from history?')) {
@@ -263,81 +252,229 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   function populateLanguages(selectElement, languages) {
-    selectElement.innerHTML = ''; // Clear existing options
+    // Validate input parameters
+    if (!selectElement || !languages || !Array.isArray(languages)) {
+      console.error('Invalid parameters for populateLanguages:', { selectElement, languages });
+      return;
+    }
 
-    languages.sort((a, b) => a.name.localeCompare(b.name));
+    try {
+      selectElement.innerHTML = ''; // Clear existing options
 
-    languages.forEach(lang => {
-      const option = document.createElement('option');
-      option.value = lang.code;
-      option.textContent = lang.name;
-      selectElement.appendChild(option);
-    });
+      // Validate and sort languages
+      const validLanguages = languages.filter(lang =>
+        lang && typeof lang === 'object' && lang.code && (lang.name || lang.language)
+      );
+
+      if (validLanguages.length === 0) {
+        console.warn('No valid languages found, using defaults');
+        // Add a default option if no valid languages
+        const defaultOption = document.createElement('option');
+        defaultOption.value = 'en';
+        defaultOption.textContent = 'English';
+        selectElement.appendChild(defaultOption);
+        return;
+      }
+
+      validLanguages.sort((a, b) => {
+        const nameA = a.name || a.language || a.code;
+        const nameB = b.name || b.language || b.code;
+        return nameA.localeCompare(nameB);
+      });
+
+      validLanguages.forEach(lang => {
+        const option = document.createElement('option');
+        option.value = lang.code;
+        option.textContent = lang.name || lang.language || lang.code;
+        selectElement.appendChild(option);
+      });
+    } catch (error) {
+      console.error('Error in populateLanguages:', error);
+    }
   }
 
-  // Function to save preferences
+  // Function to save preferences with error handling
   function savePreferences() {
+    // Validate DOM elements exist
+    if (!fromLangSelect || !toLangSelect || !toggleTranslate) {
+      console.error('Required DOM elements not found for saving preferences');
+      return;
+    }
+
     const fromLanguage = fromLangSelect.value;
     const toLanguage = toLangSelect.value;
-    const isEnabled = toggleTranslate.checked; // Get toggle state
+    const isEnabled = toggleTranslate.checked;
 
     // Clear previous messages
-    messageArea.textContent = '';
+    if (messageArea) {
+      messageArea.textContent = '';
+    }
 
     // Validation: Prevent saving if fromLanguage and toLanguage are the same
     if (fromLanguage === toLanguage) {
-      messageArea.textContent = 'Please select two distinct languages.';
-      return; // Stop the function
+      if (messageArea) {
+        messageArea.textContent = 'Please select two distinct languages.';
+      }
+      return;
+    }
+
+    // Validate language codes
+    if (!fromLanguage || !toLanguage) {
+      if (messageArea) {
+        messageArea.textContent = 'Please select valid languages.';
+      }
+      return;
     }
 
     chrome.storage.sync.set({
       fromLanguage: fromLanguage,
       toLanguage: toLanguage,
-      isEnabled: isEnabled // Save toggle state
+      isEnabled: isEnabled
+    }, function() {
+      if (chrome.runtime.lastError) {
+        console.error('Error saving preferences:', chrome.runtime.lastError);
+        if (messageArea) {
+          messageArea.textContent = 'Error saving preferences. Please try again.';
+        }
+      }
     });
   }
 
-  // Load saved options
-  chrome.storage.sync.get(['selectedLanguages', 'fromLanguage', 'toLanguage', 'isEnabled'], function (items) {
+  // Load saved options with proper error handling
+  function loadLanguageSettings() {
+    chrome.storage.sync.get(['selectedLanguages', 'fromLanguage', 'toLanguage', 'isEnabled'], function (items) {
+      // Check for Chrome storage errors
+      if (chrome.runtime.lastError) {
+        console.error('Chrome storage error:', chrome.runtime.lastError);
+        // Use default languages if storage fails
+        initializeWithDefaults();
+        return;
+      }
+
+      const defaultLanguages = [
+        { code: 'en', name: 'English' },
+        { code: 'bn', name: 'Bangla' },
+        { code: 'es', name: 'Spanish' },
+        { code: 'fr', name: 'French' },
+        { code: 'de', name: 'German' },
+        { code: 'zh-CN', name: 'Chinese (Simplified)' },
+        { code: 'hi', name: 'Hindi' }
+      ];
+
+      // Ensure we have valid language data
+      let languages = defaultLanguages;
+      if (items.selectedLanguages && Array.isArray(items.selectedLanguages) && items.selectedLanguages.length > 0) {
+        // Validate language structure and convert if needed
+        languages = items.selectedLanguages.map(lang => {
+          // Handle both old and new data structures
+          return {
+            code: lang.code,
+            name: lang.name || lang.language || lang.code
+          };
+        });
+      }
+
+      // Validate DOM elements exist
+      if (!fromLangSelect || !toLangSelect) {
+        console.error('Language select elements not found in DOM');
+        return;
+      }
+
+      try {
+        populateLanguages(fromLangSelect, languages);
+        populateLanguages(toLangSelect, languages);
+
+        // Set default values with validation
+        const fromLang = items.fromLanguage || 'en';
+        const toLang = items.toLanguage || 'bn';
+
+        // Ensure the selected values exist in the dropdown
+        if (fromLangSelect.querySelector(`option[value="${fromLang}"]`)) {
+          fromLangSelect.value = fromLang;
+        } else {
+          fromLangSelect.value = 'en'; // Fallback to English
+        }
+
+        if (toLangSelect.querySelector(`option[value="${toLang}"]`)) {
+          toLangSelect.value = toLang;
+        } else {
+          toLangSelect.value = 'bn'; // Fallback to Bangla
+        }
+
+        toggleTranslate.checked = (typeof items.isEnabled === 'boolean') ? items.isEnabled : true;
+      } catch (error) {
+        console.error('Error populating language dropdowns:', error);
+        initializeWithDefaults();
+      }
+    });
+  }
+
+  function initializeWithDefaults() {
     const defaultLanguages = [
       { code: 'en', name: 'English' },
       { code: 'bn', name: 'Bangla' },
       { code: 'es', name: 'Spanish' },
       { code: 'fr', name: 'French' },
       { code: 'de', name: 'German' },
-      { code: 'zh', name: 'Chinese' },
+      { code: 'zh-CN', name: 'Chinese (Simplified)' },
       { code: 'hi', name: 'Hindi' }
     ];
-    const languages = items.selectedLanguages && items.selectedLanguages.length > 0 ? items.selectedLanguages : defaultLanguages;
 
-    populateLanguages(fromLangSelect, languages);
-    populateLanguages(toLangSelect, languages);
+    if (fromLangSelect && toLangSelect) {
+      populateLanguages(fromLangSelect, defaultLanguages);
+      populateLanguages(toLangSelect, defaultLanguages);
+      fromLangSelect.value = 'en';
+      toLangSelect.value = 'bn';
+      if (toggleTranslate) {
+        toggleTranslate.checked = true;
+      }
+    }
+  }
 
-    fromLangSelect.value = items.fromLanguage || 'en'; // Default to English
-    toLangSelect.value = items.toLanguage || 'bn'; // Default to Bangla
-    toggleTranslate.checked = (typeof items.isEnabled === 'boolean') ? items.isEnabled : true; // Default to enabled
-  });
+  // Call the load function
+  loadLanguageSettings();
 
-  // Event listener for language swap button
-  swapLanguagesButton.addEventListener('click', function () {
-    const currentFrom = fromLangSelect.value;
-    const currentTo = toLangSelect.value;
+  // Event listener for language swap button with validation
+  if (swapLanguagesButton) {
+    swapLanguagesButton.addEventListener('click', function () {
+      if (!fromLangSelect || !toLangSelect) {
+        console.error('Language select elements not available for swap');
+        return;
+      }
 
-    // Swap values
-    fromLangSelect.value = currentTo;
-    toLangSelect.value = currentFrom;
+      const currentFrom = fromLangSelect.value;
+      const currentTo = toLangSelect.value;
 
-    savePreferences(); // Save preferences after swap
-  });
+      // Validate that we have valid values to swap
+      if (!currentFrom || !currentTo) {
+        console.warn('Cannot swap: invalid language values');
+        return;
+      }
 
-  // Save preferences on dropdown change
-  fromLangSelect.addEventListener('change', savePreferences);
-  toLangSelect.addEventListener('change', savePreferences);
+      // Swap values
+      fromLangSelect.value = currentTo;
+      toLangSelect.value = currentFrom;
 
-  settingsIcon.addEventListener('click', function () {
-    chrome.runtime.openOptionsPage();
-  });
+      savePreferences(); // Save preferences after swap
+    });
+  }
+
+  // Save preferences on dropdown change with validation
+  if (fromLangSelect) {
+    fromLangSelect.addEventListener('change', savePreferences);
+  }
+  if (toLangSelect) {
+    toLangSelect.addEventListener('change', savePreferences);
+  }
+
+  if (settingsIcon) {
+    settingsIcon.addEventListener('click', function () {
+      chrome.runtime.openOptionsPage();
+    });
+  }
 
   // Save preferences on toggle change
-  toggleTranslate.addEventListener('change', savePreferences);
+  if (toggleTranslate) {
+    toggleTranslate.addEventListener('change', savePreferences);
+  }
 });

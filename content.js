@@ -1,5 +1,7 @@
 let tooltip;
-let debounceTimeout; // Declare debounceTimeout variable
+let debounceTimeout;
+let currentTranslationId = 0; // Track translation requests to prevent race conditions
+let isTooltipVisible = false;
 
 document.addEventListener('mouseup', function(e) {
   const selectedText = window.getSelection().toString().trim();
@@ -8,138 +10,325 @@ document.addEventListener('mouseup', function(e) {
   clearTimeout(debounceTimeout);
 
   if (selectedText.length > 0 && /\S/.test(selectedText)) {
-    // Request preferences from background script
-    chrome.runtime.sendMessage({ action: "getTranslationPreferences" }, function(items) {
-      const fromLang  = items.fromLanguage || 'en'; // Default to English
-      const toLang    = items.toLanguage || 'bn'; // Default to Bangla
-      const isEnabled = (typeof items.isEnabled === 'boolean') ? items.isEnabled : true; // Default to enabled
+    // Increment translation ID to track this specific request
+    const translationId = ++currentTranslationId;
 
-      if (isEnabled) { // Only proceed if translation is enabled
+    // Request preferences from background script with error handling
+    chrome.runtime.sendMessage({ action: "getTranslationPreferences" }, function(items) {
+      // Check if this translation is still relevant (user hasn't made a new selection)
+      if (translationId !== currentTranslationId) {
+        return; // Ignore outdated requests
+      }
+
+      // Check for runtime errors
+      if (chrome.runtime.lastError) {
+        console.error('Error getting translation preferences:', chrome.runtime.lastError);
+        return;
+      }
+
+      // Validate response
+      if (!items || typeof items !== 'object') {
+        console.warn('Invalid preferences response, using defaults');
+        items = {};
+      }
+
+      const fromLang  = items.fromLanguage || 'en';
+      const toLang    = items.toLanguage || 'bn';
+      const isEnabled = (typeof items.isEnabled === 'boolean') ? items.isEnabled : true;
+
+      if (isEnabled) {
         // Set a new timeout for the translation logic
         debounceTimeout = setTimeout(() => {
-          showTooltip(e.clientX, e.clientY, "Translating...");
+          // Double-check that this translation is still relevant
+          if (translationId !== currentTranslationId) {
+            return;
+          }
 
-          translateText(selectedText, fromLang, toLang)
+          showTooltip(e.clientX, e.clientY, "Translating...", selectedText, fromLang, toLang);
+
+          translateText(selectedText, fromLang, toLang, translationId)
             .then(translation => {
-              showTooltip(e.clientX, e.clientY, translation);
+              // Only update if this is still the current translation request
+              if (translationId === currentTranslationId && translation) {
+                showTooltip(e.clientX, e.clientY, translation, selectedText, fromLang, toLang);
 
-              // Save successful translation to history
-              if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                saveTranslationToHistory(selectedText, translation, fromLang, toLang);
+                // Save successful translation to history
+                if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
+                  saveTranslationToHistory(selectedText, translation, fromLang, toLang);
+                }
               }
             })
             .catch(error => {
-              console.error("Translation error:", error);
-              showTooltip(e.clientX, e.clientY, "Translation failed");
+              if (translationId === currentTranslationId) {
+                console.error("Translation error:", error);
+                showTooltip(e.clientX, e.clientY, "Translation failed", selectedText, fromLang, toLang);
+              }
             });
-        }, 300); // Debounce time of 300 milliseconds
+        }, 300);
       } else {
-        // If translation is disabled, hide any existing tooltip
-        if (tooltip) {
-          tooltip.style.display = 'none';
-        }
+        hideTooltip();
       }
     });
+  } else {
+    // Hide tooltip if no text is selected
+    hideTooltip();
   }
 });
 
-document.addEventListener('mousedown', function() {
+document.addEventListener('mousedown', function(e) {
+  // Don't hide tooltip if clicking on the tooltip itself
+  if (tooltip && tooltip.contains(e.target)) {
+    return;
+  }
+
+  hideTooltip();
+  // Clear debounce timeout and increment translation ID to cancel pending requests
+  clearTimeout(debounceTimeout);
+  currentTranslationId++;
+});
+
+// Hide tooltip when scrolling
+document.addEventListener('scroll', function() {
+  hideTooltip();
+});
+
+// Hide tooltip when window is resized
+window.addEventListener('resize', function() {
+  hideTooltip();
+});
+
+function hideTooltip() {
   if (tooltip) {
     tooltip.style.display = 'none';
+    tooltip.classList.remove('tooltip-visible');
+    isTooltipVisible = false;
   }
-  // Also clear debounce timeout on mousedown to immediately hide tooltip and prevent delayed translation
-  clearTimeout(debounceTimeout);
-});
+}
 
-function showTooltip(x, y, text) {
+function showTooltip(x, y, text, sourceText, fromLang, toLang) {
   if (!tooltip) {
-    tooltip    = document.createElement('div');
+    tooltip = document.createElement('div');
     tooltip.id = 'translation-tooltip';
+    tooltip.className = 'translation-tooltip';
     document.body.appendChild(tooltip);
 
-    // Prevent mousedown events on the tooltip from propagating to the document
+    // Prevent events from propagating
     tooltip.addEventListener('mousedown', function(e) {
+      e.stopPropagation();
+    });
+
+    tooltip.addEventListener('click', function(e) {
       e.stopPropagation();
     });
   }
 
-  // Clear previous content and add translated text
-  tooltip.innerHTML = ''; // Clear existing content
-  const textSpan = document.createElement('span');
-  textSpan.textContent = text;
-  tooltip.appendChild(textSpan);
+  // Clear previous content
+  tooltip.innerHTML = '';
 
-  // Only add copy button if text is not "Translating..."
-  if (text !== "Translating...") {
+  // Create tooltip content structure
+  const tooltipContent = document.createElement('div');
+  tooltipContent.className = 'tooltip-content';
+
+  // Add language indicator if not "Translating..."
+  if (text !== "Translating..." && fromLang && toLang) {
+    const langIndicator = document.createElement('div');
+    langIndicator.className = 'language-indicator';
+
+    // Get language names from the tooltip parameters
+    const getLanguageName = (code) => {
+      const languageNames = {
+        'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German',
+        'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian', 'ja': 'Japanese',
+        'ko': 'Korean', 'zh-CN': 'Chinese (Simplified)', 'zh-TW': 'Chinese (Traditional)',
+        'ar': 'Arabic', 'hi': 'Hindi', 'bn': 'Bangla', 'tr': 'Turkish',
+        'nl': 'Dutch', 'sv': 'Swedish', 'da': 'Danish', 'no': 'Norwegian',
+        'fi': 'Finnish', 'pl': 'Polish', 'cs': 'Czech', 'sk': 'Slovak',
+        'hu': 'Hungarian', 'ro': 'Romanian', 'bg': 'Bulgarian', 'hr': 'Croatian',
+        'sr': 'Serbian', 'sl': 'Slovenian', 'et': 'Estonian', 'lv': 'Latvian',
+        'lt': 'Lithuanian', 'mt': 'Maltese', 'ga': 'Irish', 'cy': 'Welsh'
+      };
+      return languageNames[code] || code.toUpperCase();
+    };
+
+    langIndicator.textContent = `${getLanguageName(fromLang)} → ${getLanguageName(toLang)}`;
+    tooltipContent.appendChild(langIndicator);
+  }
+
+  // Add translation text
+  const textContainer = document.createElement('div');
+  textContainer.className = 'translation-text';
+  textContainer.textContent = text;
+  tooltipContent.appendChild(textContainer);
+
+  // Add copy button if not "Translating..."
+  if (text !== "Translating..." && !text.includes('failed') && !text.includes('error')) {
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'tooltip-buttons';
+
     const copyButton = document.createElement('button');
+    copyButton.className = 'tooltip-btn copy-btn';
+    copyButton.innerHTML = 'Copy';
+    copyButton.title = 'Copy translation';
 
-    copyButton.textContent           = 'Copy';
-    copyButton.style.marginLeft      = '10px';     // Add some spacing
-    copyButton.style.padding         = '2px 5px';
-    copyButton.style.fontSize        = '12px';
-    copyButton.style.cursor          = 'pointer';
-    copyButton.style.backgroundColor = '#555';
-    copyButton.style.color           = '#fff';
-    copyButton.style.border          = 'none';
-    copyButton.style.borderRadius    = '3px';
-
-    copyButton.onclick = function() {
+    copyButton.addEventListener('click', function(e) {
+      e.stopPropagation();
       navigator.clipboard.writeText(text).then(() => {
-        const originalText = copyButton.textContent;
-        copyButton.textContent = 'Copied!';
+        copyButton.innerHTML = 'Copied!';
+        copyButton.classList.add('success');
         setTimeout(() => {
-          copyButton.textContent = originalText;
-        }, 1000);
+          copyButton.innerHTML = 'Copy';
+          copyButton.classList.remove('success');
+        }, 1500);
       }).catch(err => {
         console.error('Failed to copy text: ', err);
+        copyButton.innerHTML = 'Failed';
+        copyButton.classList.add('error');
+        setTimeout(() => {
+          copyButton.innerHTML = 'Copy';
+          copyButton.classList.remove('error');
+        }, 1500);
       });
-    };
-    tooltip.appendChild(copyButton);
+    });
+
+    buttonContainer.appendChild(copyButton);
+    tooltipContent.appendChild(buttonContainer);
   }
 
-  // Get the bounding rectangle of the selected text
-  const selection = window.getSelection();
-  if (!selection.rangeCount) return; // No selection
-
-  const range = selection.getRangeAt(0);
-  const rect  = range.getBoundingClientRect();
-
-  // Calculate desired position
-  let tooltipX = rect.left + window.scrollX;
-  let tooltipY = rect.bottom + window.scrollY + 5; // 5px below the selected text
-
-  // Basic viewport checking (prevent going off-screen to the right)
-  // This is a simplified check. More robust solutions would consider top/bottom/left.
-  if (tooltipX + tooltip.offsetWidth > window.innerWidth + window.scrollX) {
-    tooltipX = window.innerWidth + window.scrollX - tooltip.offsetWidth - 10; // 10px padding from right edge
-  }
-  if (tooltipX < window.scrollX) { // Prevent going off-screen to the left
-    tooltipX = window.scrollX + 10; // 10px padding from left edge
+  // Add loading indicator for "Translating..."
+  if (text === "Translating...") {
+    const loader = document.createElement('div');
+    loader.className = 'loading-indicator';
+    loader.innerHTML = '<div class="spinner"></div>';
+    tooltipContent.appendChild(loader);
   }
 
-  tooltip.style.left    = tooltipX + 'px';
-  tooltip.style.top     = tooltipY + 'px';
+  tooltip.appendChild(tooltipContent);
+
+  // Position the tooltip
+  positionTooltip(x, y);
+
+  // Show tooltip with animation
   tooltip.style.display = 'block';
+  // Force reflow for animation
+  tooltip.offsetHeight;
+  tooltip.classList.add('tooltip-visible');
+  isTooltipVisible = true;
 }
 
-async function translateText(text, fromLang, toLang) {
-  const langpair = `${fromLang}|${toLang}`;
-  const url      = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
+function positionTooltip(x, y) {
+  if (!tooltip) return;
+
+  // Get selection rectangle for better positioning
+  const selection = window.getSelection();
+  let rect = { left: x, right: x, top: y, bottom: y };
+
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    rect = range.getBoundingClientRect();
+  }
+
+  // Initial positioning
+  let tooltipX = rect.left + window.scrollX;
+  let tooltipY = rect.bottom + window.scrollY + 8; // 8px below selection
+
+  // Temporarily show tooltip to get dimensions
+  tooltip.style.visibility = 'hidden';
+  tooltip.style.display = 'block';
+
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const tooltipWidth = tooltipRect.width;
+  const tooltipHeight = tooltipRect.height;
+
+  // Hide again
+  tooltip.style.visibility = 'visible';
+  tooltip.style.display = 'none';
+
+  // Adjust horizontal position
+  if (tooltipX + tooltipWidth > window.innerWidth + window.scrollX) {
+    tooltipX = window.innerWidth + window.scrollX - tooltipWidth - 10;
+  }
+  if (tooltipX < window.scrollX) {
+    tooltipX = window.scrollX + 10;
+  }
+
+  // Adjust vertical position (show above if not enough space below)
+  if (tooltipY + tooltipHeight > window.innerHeight + window.scrollY) {
+    tooltipY = rect.top + window.scrollY - tooltipHeight - 8; // Show above selection
+  }
+  if (tooltipY < window.scrollY) {
+    tooltipY = window.scrollY + 10;
+  }
+
+  tooltip.style.left = tooltipX + 'px';
+  tooltip.style.top = tooltipY + 'px';
+}
+
+async function translateText(text, fromLang, toLang, requestId) {
+  // Check if this request is still valid
+  if (requestId && requestId !== currentTranslationId) {
+    return null; // Request cancelled
+  }
+
+  // Validate and normalize language codes for MyMemory API
+  const normalizeLanguageCode = (lang) => {
+    // Common language code mappings for MyMemory API
+    const languageMap = {
+      'zh-CN': 'zh-CN',
+      'zh-TW': 'zh-TW',
+      'zh': 'zh-CN', // Default Chinese to Simplified
+      'pt-BR': 'pt',
+      'pt-PT': 'pt'
+    };
+    return languageMap[lang] || lang;
+  };
+
+  const normalizedFromLang = normalizeLanguageCode(fromLang);
+  const normalizedToLang = normalizeLanguageCode(toLang);
+
+  // Validate that we have different languages
+  if (normalizedFromLang === normalizedToLang) {
+    return "Source and target languages cannot be the same.";
+  }
+
+  const langpair = `${normalizedFromLang}|${normalizedToLang}`;
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
+
+  console.log(`Translating: "${text}" from ${normalizedFromLang} to ${normalizedToLang}`);
 
   try {
     const response = await fetch(url);
-    const data = await response.json();
-    if (data.responseData) {
-      return data.responseData.translatedText;
-    } else if (data.responseStatus === 403) {
-        return "MyMemory API daily limit exceeded or invalid request.";
+
+    // Check again if request is still valid
+    if (requestId && requestId !== currentTranslationId) {
+      return null;
     }
-    else {
-      return "No translation found.";
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('Translation API response:', data);
+
+    if (data.responseData && data.responseData.translatedText) {
+      const translatedText = data.responseData.translatedText;
+
+      // Check if translation is actually different from source
+      if (translatedText.toLowerCase().trim() === text.toLowerCase().trim()) {
+        return `No translation needed (same text in both languages).`;
+      }
+
+      return translatedText;
+    } else if (data.responseStatus === 403) {
+      return "MyMemory API daily limit exceeded. Please try again tomorrow.";
+    } else if (data.responseStatus === 404) {
+      return "Translation not available for this language pair.";
+    } else {
+      return `Translation error: ${data.responseDetails || 'Unknown error'}`;
     }
   } catch (error) {
-    console.error("API call failed (MyMemory):", error);
-    return "Translation service error (MyMemory).";
+    console.error("Translation API call failed:", error);
+    return `Translation service error: ${error.message}`;
   }
 }
 

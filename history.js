@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let allHistory = [];
   let filteredHistory = [];
   let currentPage = 1;
-  const itemsPerPage = 20;
+  const itemsPerPage = 12;
 
   // Initialize the page
   init();
@@ -232,12 +232,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     title="Copy translation">
               Copy
             </button>
-            <button class="card-btn retranslate" data-action="retranslate"
-                    data-source="${item.sourceText.replace(/"/g, '&quot;')}"
-                    data-from="${item.sourceLang}" data-to="${item.targetLang}"
-                    title="Re-translate">
-              &#8635;
-            </button>
             <button class="card-btn delete" data-action="delete"
                     data-id="${item.id}" title="Delete">
               &times;
@@ -272,9 +266,7 @@ document.addEventListener('DOMContentLoaded', function() {
         case 'copy':
           copyToClipboard(e.target.dataset.text, e.target);
           break;
-        case 'retranslate':
-          retranslate(e.target.dataset.source, e.target.dataset.from, e.target.dataset.to);
-          break;
+
         case 'delete':
           deleteItem(e.target.dataset.id);
           break;
@@ -323,11 +315,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  function retranslate(sourceText, fromLang, toLang) {
-    // This would ideally open the popup and set the languages
-    // For now, we'll just show a notification
-    alert(`Ready to translate "${sourceText}" from ${fromLang} to ${toLang}. Please use the browser extension to select this text.`);
-  }
+
 
   function deleteItem(itemId) {
     if (confirm('Are you sure you want to delete this translation?')) {
