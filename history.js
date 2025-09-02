@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const resultsCount = document.getElementById('results-count');
   const clearAllBtn = document.getElementById('clear-all-history');
   const exportBtn = document.getElementById('export-history');
+  const importBtn = document.getElementById('import-history');
+  const importFileInput = document.getElementById('import-file-input');
   const prevPageBtn = document.getElementById('prev-page');
   const nextPageBtn = document.getElementById('next-page');
   const pageInfo = document.getElementById('page-info');
@@ -49,6 +51,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Action buttons
     clearAllBtn.addEventListener('click', clearAllHistory);
     exportBtn.addEventListener('click', exportHistory);
+    importBtn.addEventListener('click', importHistory);
+    importFileInput.addEventListener('change', handleImportFile);
 
     // Pagination
     prevPageBtn.addEventListener('click', () => changePage(currentPage - 1));
@@ -389,27 +393,154 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    const exportData = allHistory.map(item => {
-      const date = new Date(item.timestamp).toLocaleString();
-      const favorite = item.isFavorite ? ' [Favorite]' : '';
-      const confidence = item.confidence ? ` (${Math.round(item.confidence * 100)}% confidence)` : '';
+    // Create JSON export with metadata
+    const exportData = {
+      metadata: {
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        totalItems: allHistory.length,
+        source: 'Simple Text Translator'
+      },
+      translations: allHistory.map(item => ({
+        id: item.id,
+        sourceText: decodeHtmlEntities(item.sourceText),
+        translatedText: decodeHtmlEntities(item.translatedText),
+        sourceLang: item.sourceLang,
+        targetLang: item.targetLang,
+        timestamp: item.timestamp,
+        isFavorite: item.isFavorite || false,
+        confidence: item.confidence || null
+      }))
+    };
 
-      // Decode any HTML entities in the text
-      const sourceText = decodeHtmlEntities(item.sourceText);
-      const translatedText = decodeHtmlEntities(item.translatedText);
-
-      return `${sourceText} (${item.sourceLang}) -> ${translatedText} (${item.targetLang})${favorite}${confidence} - ${date}`;
-    }).join('\n');
-
-    const blob = new Blob([exportData], { type: 'text/plain' });
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `translation_history_${new Date().toISOString().split('T')[0]}.txt`;
+    a.download = `translation_history_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  function importHistory() {
+    importFileInput.click();
+  }
+
+  function handleImportFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.json')) {
+      alert('Please select a valid JSON file.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const importedData = JSON.parse(e.target.result);
+
+        // Validate the imported data structure
+        if (!validateImportData(importedData)) {
+          alert('Invalid file format. Please select a valid translation history JSON file.');
+          return;
+        }
+
+        // Confirm import action
+        const confirmMessage = `Import ${importedData.translations.length} translations?\n\nThis will merge with your existing history. Duplicates will be skipped.`;
+        if (!confirm(confirmMessage)) {
+          return;
+        }
+
+        // Process imported translations
+        processImportedData(importedData);
+
+      } catch (error) {
+        console.error('Import error:', error);
+        alert('Error reading file. Please check that it\'s a valid JSON file.');
+      }
+    };
+
+    reader.readAsText(file);
+    // Reset file input
+    event.target.value = '';
+  }
+
+  function validateImportData(data) {
+    // Check if data has the expected structure
+    if (!data || typeof data !== 'object') return false;
+    if (!data.translations || !Array.isArray(data.translations)) return false;
+
+    // Validate each translation item
+    for (const item of data.translations) {
+      if (!item.sourceText || !item.translatedText || !item.sourceLang || !item.targetLang) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function processImportedData(importedData) {
+    const importedTranslations = importedData.translations;
+    let mergedCount = 0;
+    let skippedCount = 0;
+
+    // Get current history
+    chrome.storage.local.get(['translationHistory'], function(result) {
+      let currentHistory = result.translationHistory || [];
+
+      // Process each imported translation
+      importedTranslations.forEach(importedItem => {
+        // Check if this translation already exists
+        const exists = currentHistory.some(existingItem =>
+          existingItem.sourceText === importedItem.sourceText &&
+          existingItem.translatedText === importedItem.translatedText &&
+          existingItem.sourceLang === importedItem.sourceLang &&
+          existingItem.targetLang === importedItem.targetLang
+        );
+
+        if (!exists) {
+          // Generate new ID if not provided or if ID already exists
+          const newItem = {
+            id: importedItem.id && !currentHistory.find(h => h.id === importedItem.id)
+              ? importedItem.id
+              : Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            sourceText: importedItem.sourceText,
+            translatedText: importedItem.translatedText,
+            sourceLang: importedItem.sourceLang,
+            targetLang: importedItem.targetLang,
+            timestamp: importedItem.timestamp || Date.now(),
+            isFavorite: importedItem.isFavorite || false,
+            confidence: importedItem.confidence || null
+          };
+
+          currentHistory.push(newItem);
+          mergedCount++;
+        } else {
+          skippedCount++;
+        }
+      });
+
+      // Save merged history
+      chrome.storage.local.set({ translationHistory: currentHistory }, function() {
+        if (chrome.runtime.lastError) {
+          alert('Error saving imported data: ' + chrome.runtime.lastError.message);
+        } else {
+          // Refresh the display
+          allHistory = currentHistory;
+          populateLanguageFilter();
+          updateStatistics();
+          applyFilters();
+
+          // Show import summary
+          alert(`Import completed!\n\nImported: ${mergedCount} translations\nSkipped (duplicates): ${skippedCount} translations`);
+        }
+      });
+    });
   }
 
   // Utility functions

@@ -299,12 +299,12 @@ body {
 
 .card-btn.favorite {
   background-color: #ffc107;
-  color: #333;
+  color: #333333;
 }
 
 .card-btn.favorite.active {
   background-color: #ff9800;
-  color: white;
+  color: #333333;
 }
 
 .card-btn.copy {

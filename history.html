@@ -13,6 +13,7 @@
         <h1>Translation History</h1>
         <div class="header-actions">
           <button id="clear-all-history" class="action-btn danger">Clear All</button>
+          <button id="import-history" class="action-btn secondary">Import</button>
           <button id="export-history" class="action-btn primary">Export</button>
         </div>
       </div>
@@ -105,6 +106,9 @@
       </div>
     </main>
   </div>
+
+  <!-- Hidden file input for import functionality -->
+  <input type="file" id="import-file-input" accept=".json" style="display: none;">
 
   <script src="history.js"></script>
 </body>

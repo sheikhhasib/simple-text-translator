@@ -82,6 +82,7 @@
 .tooltip-btn:hover {
   background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
   transform: translateY(-1px);
 }
 
@@ -95,12 +96,13 @@
 
 /* Success State */
 .tooltip-btn.success {
-  background: rgba(76, 175, 80, 0.8);
-  border-color: rgba(76, 175, 80, 0.9);
+  background: rgba(59, 130, 246, 0.6);
+  border-color: rgba(59, 130, 246, 0.7);
+  color: #ffffff;
 }
 
 .tooltip-btn.success:hover {
-  background: rgba(76, 175, 80, 0.9);
+  background: rgba(59, 130, 246, 0.75);
 }
 
 /* Error State */
