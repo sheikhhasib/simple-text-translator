@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Translation History - Simple Text Translator</title>
+  <link rel="stylesheet" href="history.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="header-content">
+        <h1>Translation History</h1>
+        <div class="header-actions">
+          <button id="clear-all-history" class="action-btn danger">Clear All</button>
+          <button id="export-history" class="action-btn primary">Export</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <!-- Search and Filter Section -->
+      <div class="search-section">
+        <div class="search-container">
+          <input type="text" id="history-search" placeholder="Search translations, languages, or text...">
+          <button id="clear-search" class="clear-search-btn">&times;</button>
+        </div>
+
+        <div class="filter-section">
+          <div class="filter-group">
+            <label for="language-filter">Filter by Language:</label>
+            <select id="language-filter">
+              <option value="">All Languages</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="favorites-filter">Show:</label>
+            <select id="favorites-filter">
+              <option value="all">All Translations</option>
+              <option value="favorites">Favorites Only</option>
+              <option value="recent">Recent (30 days)</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="sort-options">Sort by:</label>
+            <select id="sort-options">
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="source">Source Text (A-Z)</option>
+              <option value="target">Translation (A-Z)</option>
+              <option value="language">Language Pair</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Statistics Section -->
+      <div class="stats-section">
+        <div class="stat-card">
+          <div class="stat-number" id="total-translations">0</div>
+          <div class="stat-label">Total Translations</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="favorite-count">0</div>
+          <div class="stat-label">Favorites</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="language-pairs">0</div>
+          <div class="stat-label">Language Pairs</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="this-month">0</div>
+          <div class="stat-label">This Month</div>
+        </div>
+      </div>
+
+      <!-- History List Section -->
+      <div class="history-section">
+        <div class="section-header">
+          <h2>Your Translations</h2>
+          <div class="results-info">
+            <span id="results-count">Loading...</span>
+          </div>
+        </div>
+
+        <div id="history-list" class="history-grid">
+          <!-- History items will be populated here -->
+        </div>
+
+        <div id="no-results" class="no-results" style="display: none;">
+          <div class="no-results-content">
+            <h3>No translations found</h3>
+            <p>Try adjusting your search or filters, or start translating some text!</p>
+          </div>
+        </div>
+
+        <!-- Pagination -->
+        <div id="pagination" class="pagination" style="display: none;">
+          <button id="prev-page" class="page-btn">&larr; Previous</button>
+          <span id="page-info">Page 1 of 1</span>
+          <button id="next-page" class="page-btn">Next &rarr;</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="history.js"></script>
+</body>
+</html>

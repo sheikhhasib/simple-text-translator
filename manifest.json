@@ -4,7 +4,8 @@
   "version": "1.0",
   "description": "Select any text on a page to see its translation.",
   "permissions": [
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "http://*/*",
@@ -37,6 +38,12 @@
     }
   },
   "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["history.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "icons": {
     "16": "images/icon16.png",
     "32": "images/icon32.png",

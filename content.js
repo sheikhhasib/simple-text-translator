@@ -22,6 +22,11 @@ document.addEventListener('mouseup', function(e) {
           translateText(selectedText, fromLang, toLang)
             .then(translation => {
               showTooltip(e.clientX, e.clientY, translation);
+
+              // Save successful translation to history
+              if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
+                saveTranslationToHistory(selectedText, translation, fromLang, toLang);
+              }
             })
             .catch(error => {
               console.error("Translation error:", error);
@@ -136,5 +141,60 @@ async function translateText(text, fromLang, toLang) {
     console.error("API call failed (MyMemory):", error);
     return "Translation service error (MyMemory).";
   }
+}
+
+// Function to save translation to history
+function saveTranslationToHistory(sourceText, translatedText, sourceLang, targetLang, confidence = null) {
+  // Don't save very short or empty translations
+  if (!sourceText || sourceText.trim().length < 2 || !translatedText || translatedText.trim().length < 2) {
+    return;
+  }
+
+  // Don't save if source and translation are the same (no actual translation occurred)
+  if (sourceText.trim().toLowerCase() === translatedText.trim().toLowerCase()) {
+    return;
+  }
+
+  const historyItem = {
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    sourceText: sourceText.trim(),
+    translatedText: translatedText.trim(),
+    sourceLang: sourceLang,
+    targetLang: targetLang,
+    timestamp: Date.now(),
+    isFavorite: false,
+    confidence: confidence
+  };
+
+  // Get existing history and add new item
+  chrome.storage.local.get(['translationHistory'], function(result) {
+    let history = result.translationHistory || [];
+
+    // Check if this exact translation already exists
+    const existingIndex = history.findIndex(item =>
+      item.sourceText === historyItem.sourceText &&
+      item.translatedText === historyItem.translatedText &&
+      item.sourceLang === historyItem.sourceLang &&
+      item.targetLang === historyItem.targetLang
+    );
+
+    if (existingIndex !== -1) {
+      // Update timestamp and move to front
+      history[existingIndex].timestamp = Date.now();
+      const item = history.splice(existingIndex, 1)[0];
+      history.unshift(item);
+    } else {
+      // Add new item to the beginning
+      history.unshift(historyItem);
+
+      // Limit history to 100 items
+      if (history.length > 100) {
+        history = history.slice(0, 100);
+      }
+    }
+
+    // Save updated history
+    chrome.storage.local.set({ translationHistory: history });
+  });
 }
 
