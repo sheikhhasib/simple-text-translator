@@ -76,8 +76,8 @@ document.addEventListener('mouseup', function(e) {
 });
 
 document.addEventListener('mousedown', function(e) {
-  // Don't hide tooltip if clicking on the tooltip itself
-  if (tooltip && tooltip.contains(e.target)) {
+  // Don't hide tooltip if clicking on the tooltip itself or its dropdown elements
+  if (tooltip && (tooltip.contains(e.target) || e.target.closest('.translation-tooltip'))) {
     return;
   }
 
@@ -85,6 +85,24 @@ document.addEventListener('mousedown', function(e) {
   // Clear debounce timeout and increment translation ID to cancel pending requests
   clearTimeout(debounceTimeout);
   currentTranslationId++;
+});
+
+// Prevent tooltip from hiding on mouse movement when interacting with dropdowns
+document.addEventListener('mousemove', function(e) {
+  // If tooltip is visible and mouse is over tooltip or its elements, don't hide
+  if (isTooltipVisible && tooltip && (tooltip.contains(e.target) || e.target.closest('.translation-tooltip'))) {
+    return;
+  }
+});
+
+// Prevent original mouseup handler from triggering when interacting with tooltip
+document.addEventListener('mouseup', function(e) {
+  // If clicking on tooltip, prevent the original translation logic
+  if (tooltip && (tooltip.contains(e.target) || e.target.closest('.translation-tooltip'))) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    return;
+  }
 });
 
 // Hide tooltip when scrolling
@@ -115,12 +133,50 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
     // Prevent events from propagating
     tooltip.addEventListener('mousedown', function(e) {
       e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    tooltip.addEventListener('mouseup', function(e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
     });
 
     tooltip.addEventListener('click', function(e) {
       e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    tooltip.addEventListener('mousemove', function(e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    tooltip.addEventListener('mouseenter', function(e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    tooltip.addEventListener('mouseover', function(e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    tooltip.addEventListener('selectstart', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    tooltip.addEventListener('select', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
     });
   }
+
+  // Store current language state in tooltip data attributes
+  tooltip.dataset.currentFromLang = fromLang;
+  tooltip.dataset.currentToLang = toLang;
 
   // Clear previous content
   tooltip.innerHTML = '';
@@ -129,29 +185,236 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
   const tooltipContent = document.createElement('div');
   tooltipContent.className = 'tooltip-content';
 
-  // Add language indicator if not "Translating..."
+  // Add language indicators and dropdowns if not "Translating..."
   if (text !== "Translating..." && fromLang && toLang) {
-    const langIndicator = document.createElement('div');
-    langIndicator.className = 'language-indicator';
+    const langContainer = document.createElement('div');
+    langContainer.className = 'language-container';
 
-    // Get language names from the tooltip parameters
-    const getLanguageName = (code) => {
-      const languageNames = {
-        'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German',
-        'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian', 'ja': 'Japanese',
-        'ko': 'Korean', 'zh-CN': 'Chinese (Simplified)', 'zh-TW': 'Chinese (Traditional)',
-        'ar': 'Arabic', 'hi': 'Hindi', 'bn': 'Bangla', 'tr': 'Turkish',
-        'nl': 'Dutch', 'sv': 'Swedish', 'da': 'Danish', 'no': 'Norwegian',
-        'fi': 'Finnish', 'pl': 'Polish', 'cs': 'Czech', 'sk': 'Slovak',
-        'hu': 'Hungarian', 'ro': 'Romanian', 'bg': 'Bulgarian', 'hr': 'Croatian',
-        'sr': 'Serbian', 'sl': 'Slovenian', 'et': 'Estonian', 'lv': 'Latvian',
-        'lt': 'Lithuanian', 'mt': 'Maltese', 'ga': 'Irish', 'cy': 'Welsh'
-      };
-      return languageNames[code] || code.toUpperCase();
-    };
+    // Get available languages from storage
+    chrome.storage.sync.get(['selectedLanguages'], function(items) {
+      // Default languages if none are selected
+      const defaultLanguages = [
+        { code: 'en', name: 'English' },
+        { code: 'bn', name: 'Bangla' },
+        { code: 'es', name: 'Spanish' },
+        { code: 'fr', name: 'French' },
+        { code: 'de', name: 'German' },
+        { code: 'it', name: 'Italian' },
+        { code: 'pt', name: 'Portuguese' },
+        { code: 'ru', name: 'Russian' },
+        { code: 'ja', name: 'Japanese' },
+        { code: 'ko', name: 'Korean' },
+        { code: 'zh-CN', name: 'Chinese' },
+        { code: 'ar', name: 'Arabic' },
+        { code: 'hi', name: 'Hindi' },
+        { code: 'tr', name: 'Turkish' },
+        { code: 'nl', name: 'Dutch' },
+        { code: 'sv', name: 'Swedish' },
+        { code: 'pl', name: 'Polish' },
+        { code: 'cs', name: 'Czech' }
+      ];
 
-    langIndicator.textContent = `${getLanguageName(fromLang)} → ${getLanguageName(toLang)}`;
-    tooltipContent.appendChild(langIndicator);
+      let languages = defaultLanguages;
+      if (items.selectedLanguages && Array.isArray(items.selectedLanguages) && items.selectedLanguages.length > 0) {
+        languages = items.selectedLanguages.map(lang => ({
+          code: lang.code,
+          name: lang.name || lang.language || lang.code
+        }));
+      }
+
+      // Sort languages alphabetically
+      languages.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Create source language dropdown
+      const sourceLangSelect = document.createElement('select');
+      sourceLangSelect.className = 'source-lang-select';
+      sourceLangSelect.title = 'Change source language';
+
+      // Populate source language options
+      languages.forEach(lang => {
+        const option = document.createElement('option');
+        option.value = lang.code;
+        option.textContent = lang.name;
+        option.selected = lang.code === fromLang;
+        sourceLangSelect.appendChild(option);
+      });
+
+      // Create arrow separator
+      const arrowSeparator = document.createElement('span');
+      arrowSeparator.className = 'lang-arrow';
+      arrowSeparator.textContent = ' → ';
+
+      // Create target language dropdown
+      const targetLangSelect = document.createElement('select');
+      targetLangSelect.className = 'target-lang-select';
+      targetLangSelect.title = 'Change target language';
+
+      // Populate target language options
+      languages.forEach(lang => {
+        const option = document.createElement('option');
+        option.value = lang.code;
+        option.textContent = lang.name;
+        option.selected = lang.code === toLang;
+        targetLangSelect.appendChild(option);
+      });
+
+      // Handle source language change
+      sourceLangSelect.addEventListener('change', function(e) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        e.preventDefault();
+
+        const newSourceLang = e.target.value;
+        const currentTargetLang = targetLangSelect.value;
+        const currentFromLang = tooltip.dataset.currentFromLang;
+
+        // Only translate if there's an actual change AND languages are different
+        if (newSourceLang !== currentFromLang && newSourceLang !== currentTargetLang) {
+          // Update stored language state
+          tooltip.dataset.currentFromLang = newSourceLang;
+
+          // Show loading state
+          const translationTextEl = tooltip.querySelector('.translation-text');
+          if (translationTextEl) {
+            translationTextEl.textContent = 'Translating...';
+          }
+
+          // Get the source text from the current selection
+          const selectedText = window.getSelection().toString().trim();
+
+          // Increment translation ID for new request
+          const newTranslationId = ++currentTranslationId;
+
+          // Fetch new translation
+          translateText(selectedText, newSourceLang, currentTargetLang, newTranslationId)
+            .then(translation => {
+              if (newTranslationId === currentTranslationId && translation) {
+                // Update the tooltip with new translation
+                if (translationTextEl) {
+                  translationTextEl.textContent = translation;
+                }
+
+                // Save the new translation to history if successful
+                if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
+                  saveTranslationToHistory(selectedText, translation, newSourceLang, currentTargetLang);
+                }
+              }
+            })
+            .catch(error => {
+              if (newTranslationId === currentTranslationId) {
+                console.error('Re-translation error:', error);
+                if (translationTextEl) {
+                  translationTextEl.textContent = 'Translation failed';
+                }
+              }
+            });
+        }
+      });
+
+      // Handle target language change
+      targetLangSelect.addEventListener('change', function(e) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        e.preventDefault();
+
+        const newTargetLang = e.target.value;
+        const currentSourceLang = sourceLangSelect.value;
+        const currentToLang = tooltip.dataset.currentToLang;
+
+        // Only translate if there's an actual change AND languages are different
+        if (newTargetLang !== currentToLang && newTargetLang !== currentSourceLang) {
+          // Update stored language state
+          tooltip.dataset.currentToLang = newTargetLang;
+
+          // Show loading state
+          const translationTextEl = tooltip.querySelector('.translation-text');
+          if (translationTextEl) {
+            translationTextEl.textContent = 'Translating...';
+          }
+
+          // Get the source text from the current selection
+          const selectedText = window.getSelection().toString().trim();
+
+          // Increment translation ID for new request
+          const newTranslationId = ++currentTranslationId;
+
+          // Fetch new translation
+          translateText(selectedText, currentSourceLang, newTargetLang, newTranslationId)
+            .then(translation => {
+              if (newTranslationId === currentTranslationId && translation) {
+                // Update the tooltip with new translation
+                if (translationTextEl) {
+                  translationTextEl.textContent = translation;
+                }
+
+                // Save the new translation to history if successful
+                if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
+                  saveTranslationToHistory(selectedText, translation, currentSourceLang, newTargetLang);
+                }
+              }
+            })
+            .catch(error => {
+              if (newTranslationId === currentTranslationId) {
+                console.error('Re-translation error:', error);
+                if (translationTextEl) {
+                  translationTextEl.textContent = 'Translation failed';
+                }
+              }
+            });
+        }
+      });
+
+      // Prevent dropdown events from closing tooltip
+      [sourceLangSelect, targetLangSelect].forEach(select => {
+        select.addEventListener('mousedown', function(e) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        });
+
+        select.addEventListener('mouseup', function(e) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        });
+
+        select.addEventListener('click', function(e) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        });
+
+        select.addEventListener('focus', function(e) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        });
+
+        select.addEventListener('mouseenter', function(e) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        });
+
+        select.addEventListener('mouseover', function(e) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        });
+
+        select.addEventListener('mousemove', function(e) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        });
+
+        select.addEventListener('selectstart', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        });
+      });
+
+      // Assemble the language container
+      langContainer.appendChild(sourceLangSelect);
+      langContainer.appendChild(arrowSeparator);
+      langContainer.appendChild(targetLangSelect);
+
+      tooltipContent.appendChild(langContainer);
+    });
   }
 
   // Add translation text
@@ -172,6 +435,8 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
 
     copyButton.addEventListener('click', function(e) {
       e.stopPropagation();
+      e.stopImmediatePropagation();
+      e.preventDefault();
       navigator.clipboard.writeText(text).then(() => {
         copyButton.innerHTML = 'Copied!';
         copyButton.classList.add('success');

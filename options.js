@@ -188,6 +188,26 @@ document.addEventListener('DOMContentLoaded', function () {
           languageListContainer.insertAdjacentHTML('beforeend', item);
         }
       });
+
+      // Add event listeners to checkboxes
+      const checkboxes = languageListContainer.querySelectorAll('input[type="checkbox"]');
+      checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+          const langCode = this.dataset.code;
+          const langName = this.dataset.name;
+
+          if (this.checked) {
+            // Add language if not already selected
+            if (!selectedLanguages.some(l => l.code === langCode)) {
+              selectedLanguages.push({ code: langCode, name: langName });
+            }
+          } else {
+            // Remove language from selected list
+            selectedLanguages = selectedLanguages.filter(l => l.code !== langCode);
+          }
+        });
+      });
+
     } catch (error) {
       console.error('Error rendering languages:', error);
       if (messageArea) {
@@ -199,11 +219,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function saveSelectedLanguages() {
     try {
-      const checkboxes = languageListContainer.querySelectorAll('input[type="checkbox"]:checked');
-      selectedLanguages = Array.from(checkboxes).map(cb => ({
-        code: cb.dataset.code,
-        name: cb.dataset.name  // Use 'name' for consistency with popup.js
-      }));
+      // selectedLanguages is already updated via checkbox event listeners
 
       chrome.storage.sync.set({ 'selectedLanguages': selectedLanguages }, function () {
         if (chrome.runtime.lastError) {
