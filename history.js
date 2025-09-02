@@ -223,7 +223,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const confidence = item.confidence ? Math.round(item.confidence * 100) : null;
 
     return `
-      <div class="history-card ${item.isFavorite ? 'favorite' : ''}" data-id="${item.id}">
+      <div class="history-card ${item.isFavorite ? 'favorite' : ''}" data-id="${item.id}" data-clickable="true">
         <div class="card-header">
           <div class="language-pair">${item.sourceLang.toUpperCase()} → ${item.targetLang.toUpperCase()}</div>
           <div class="card-actions">
@@ -259,27 +259,40 @@ document.addEventListener('DOMContentLoaded', function() {
           <span class="timestamp" title="${fullDateTime}">${timeAgo}</span>
           ${confidence ? `<span class="confidence">${confidence}% confidence</span>` : ''}
         </div>
+
       </div>
     `;
   }
 
   function setupCardEventListeners() {
     historyList.addEventListener('click', function(e) {
-      if (!e.target.classList.contains('card-btn')) return;
+      // Handle button clicks
+      if (e.target.classList.contains('card-btn')) {
+        e.stopPropagation(); // Prevent card click when clicking buttons
+        const action = e.target.dataset.action;
 
-      const action = e.target.dataset.action;
+        switch (action) {
+          case 'favorite':
+            toggleFavorite(e.target.dataset.id, e.target);
+            break;
+          case 'copy':
+            copyToClipboard(e.target.dataset.text, e.target);
+            break;
+          case 'delete':
+            deleteItem(e.target.dataset.id);
+            break;
+        }
+        return;
+      }
 
-      switch (action) {
-        case 'favorite':
-          toggleFavorite(e.target.dataset.id, e.target);
-          break;
-        case 'copy':
-          copyToClipboard(e.target.dataset.text, e.target);
-          break;
-
-        case 'delete':
-          deleteItem(e.target.dataset.id);
-          break;
+      // Handle card clicks
+      const card = e.target.closest('.history-card[data-clickable="true"]');
+      if (card) {
+        const itemId = card.dataset.id;
+        const item = allHistory.find(h => h.id === itemId);
+        if (item) {
+          showDetailsModal(item);
+        }
       }
     });
   }
@@ -348,6 +361,320 @@ document.addEventListener('DOMContentLoaded', function() {
       resultsCount.textContent = `Showing ${totalItems} translation${totalItems === 1 ? '' : 's'}`;
     } else {
       resultsCount.textContent = `Showing ${startItem}-${endItem} of ${totalItems} translations`;
+    }
+  }
+
+  function showDetailsModal(item) {
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('details-modal');
+    if (!modal) {
+      modal = createDetailsModal();
+      document.body.appendChild(modal);
+    }
+
+    // Populate modal with item data
+    populateDetailsModal(modal, item);
+
+    // Show modal
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function createDetailsModal() {
+    const modal = document.createElement('div');
+    modal.id = 'details-modal';
+    modal.className = 'details-modal';
+
+    modal.innerHTML = `
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Translation Details</h2>
+          <button class="modal-close" id="modal-close">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="language-selection">
+            <div class="language-selector">
+              <label for="from-lang-detail">From:</label>
+              <select id="from-lang-detail" class="language-select"></select>
+            </div>
+            <button id="swap-languages-detail" class="swap-btn" title="Swap languages">
+              ⇄
+            </button>
+            <div class="language-selector">
+              <label for="to-lang-detail">To:</label>
+              <select id="to-lang-detail" class="language-select"></select>
+            </div>
+          </div>
+
+          <div class="translation-section">
+            <div class="text-section">
+              <label>Original Text:</label>
+              <div class="text-content source-content" id="source-content"></div>
+            </div>
+
+            <div class="translation-arrow-detail">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M13 7l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+
+            <div class="text-section">
+              <label>Translation:</label>
+              <div class="text-content target-content" id="target-content"></div>
+              <div class="loading-indicator" id="detail-loading" style="display: none;">
+                <div class="spinner"></div>
+                <span>Translating...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="details-info">
+            <div class="info-item">
+              <span class="info-label">Timestamp:</span>
+              <span id="detail-timestamp"></span>
+            </div>
+            <div class="info-item" id="confidence-info" style="display: none;">
+              <span class="info-label">Confidence:</span>
+              <span id="detail-confidence"></span>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="detail-copy" class="action-btn copy-btn">Copy Translation</button>
+            <button id="detail-favorite" class="action-btn favorite-btn">Toggle Favorite</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Add event listeners
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal || e.target.id === 'modal-close') {
+        closeDetailsModal();
+      }
+    });
+
+    return modal;
+  }
+
+  function populateDetailsModal(modal, item) {
+    // Store current item reference
+    modal.currentItem = item;
+
+    // Populate language selectors
+    populateLanguageSelectors(modal, item);
+
+    // Populate content
+    document.getElementById('source-content').textContent = item.sourceText;
+    document.getElementById('target-content').textContent = item.translatedText;
+
+    // Populate details
+    const timestamp = new Date(item.timestamp).toLocaleString();
+    document.getElementById('detail-timestamp').textContent = timestamp;
+
+    if (item.confidence) {
+      document.getElementById('confidence-info').style.display = 'block';
+      document.getElementById('detail-confidence').textContent = `${Math.round(item.confidence * 100)}%`;
+    } else {
+      document.getElementById('confidence-info').style.display = 'none';
+    }
+
+    // Update favorite button
+    const favoriteBtn = document.getElementById('detail-favorite');
+    favoriteBtn.textContent = item.isFavorite ? 'Remove from Favorites' : 'Add to Favorites';
+    favoriteBtn.className = `action-btn favorite-btn ${item.isFavorite ? 'active' : ''}`;
+
+    // Add event listeners
+    setupModalEventListeners(modal);
+  }
+
+  function populateLanguageSelectors(modal, item) {
+    // Get available languages from storage
+    chrome.storage.sync.get(['selectedLanguages'], function(result) {
+      const defaultLanguages = [
+        { code: 'en', name: 'English' },
+        { code: 'bn', name: 'Bangla' },
+        { code: 'es', name: 'Spanish' },
+        { code: 'fr', name: 'French' },
+        { code: 'de', name: 'German' },
+        { code: 'it', name: 'Italian' },
+        { code: 'pt', name: 'Portuguese' },
+        { code: 'ru', name: 'Russian' },
+        { code: 'ja', name: 'Japanese' },
+        { code: 'ko', name: 'Korean' },
+        { code: 'zh-CN', name: 'Chinese (Simplified)' },
+        { code: 'ar', name: 'Arabic' },
+        { code: 'hi', name: 'Hindi' },
+        { code: 'tr', name: 'Turkish' },
+        { code: 'nl', name: 'Dutch' },
+        { code: 'sv', name: 'Swedish' },
+        { code: 'pl', name: 'Polish' },
+        { code: 'cs', name: 'Czech' }
+      ];
+
+      let languages = defaultLanguages;
+      if (result.selectedLanguages && Array.isArray(result.selectedLanguages) && result.selectedLanguages.length > 0) {
+        languages = result.selectedLanguages.map(lang => ({
+          code: lang.code,
+          name: lang.name || lang.language || lang.code
+        }));
+      }
+
+      // Sort languages alphabetically
+      languages.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Populate selectors
+      const fromSelect = document.getElementById('from-lang-detail');
+      const toSelect = document.getElementById('to-lang-detail');
+
+      fromSelect.innerHTML = '';
+      toSelect.innerHTML = '';
+
+      languages.forEach(lang => {
+        const fromOption = document.createElement('option');
+        fromOption.value = lang.code;
+        fromOption.textContent = lang.name;
+        fromOption.selected = lang.code === item.sourceLang;
+        fromSelect.appendChild(fromOption);
+
+        const toOption = document.createElement('option');
+        toOption.value = lang.code;
+        toOption.textContent = lang.name;
+        toOption.selected = lang.code === item.targetLang;
+        toSelect.appendChild(toOption);
+      });
+    });
+  }
+
+  function setupModalEventListeners(modal) {
+    // Remove existing listeners to avoid duplicates
+    const fromSelect = document.getElementById('from-lang-detail');
+    const toSelect = document.getElementById('to-lang-detail');
+    const swapBtn = document.getElementById('swap-languages-detail');
+    const copyBtn = document.getElementById('detail-copy');
+    const favoriteBtn = document.getElementById('detail-favorite');
+
+    // Clone elements to remove all event listeners
+    const newFromSelect = fromSelect.cloneNode(true);
+    const newToSelect = toSelect.cloneNode(true);
+    const newSwapBtn = swapBtn.cloneNode(true);
+    const newCopyBtn = copyBtn.cloneNode(true);
+    const newFavoriteBtn = favoriteBtn.cloneNode(true);
+
+    fromSelect.parentNode.replaceChild(newFromSelect, fromSelect);
+    toSelect.parentNode.replaceChild(newToSelect, toSelect);
+    swapBtn.parentNode.replaceChild(newSwapBtn, swapBtn);
+    copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
+    favoriteBtn.parentNode.replaceChild(newFavoriteBtn, favoriteBtn);
+
+    // Add new event listeners
+    newFromSelect.addEventListener('change', () => handleLanguageChange(modal));
+    newToSelect.addEventListener('change', () => handleLanguageChange(modal));
+
+    newSwapBtn.addEventListener('click', () => {
+      const fromValue = newFromSelect.value;
+      const toValue = newToSelect.value;
+      newFromSelect.value = toValue;
+      newToSelect.value = fromValue;
+      handleLanguageChange(modal);
+    });
+
+    newCopyBtn.addEventListener('click', () => {
+      const targetContent = document.getElementById('target-content').textContent;
+      navigator.clipboard.writeText(targetContent).then(() => {
+        newCopyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+          newCopyBtn.textContent = 'Copy Translation';
+        }, 1500);
+      });
+    });
+
+    newFavoriteBtn.addEventListener('click', () => {
+      const item = modal.currentItem;
+      item.isFavorite = !item.isFavorite;
+
+      // Update modal button
+      newFavoriteBtn.textContent = item.isFavorite ? 'Remove from Favorites' : 'Add to Favorites';
+      newFavoriteBtn.className = `action-btn favorite-btn ${item.isFavorite ? 'active' : ''}`;
+
+      // Save to storage and update main view
+      chrome.storage.local.set({ translationHistory: allHistory }, function() {
+        updateStatistics();
+        applyFilters(); // Refresh the main view
+      });
+    });
+  }
+
+  function handleLanguageChange(modal) {
+    const item = modal.currentItem;
+    const fromLang = document.getElementById('from-lang-detail').value;
+    const toLang = document.getElementById('to-lang-detail').value;
+
+    // Prevent translation if languages are the same
+    if (fromLang === toLang) {
+      alert('Source and target languages cannot be the same.');
+      return;
+    }
+
+    // Show loading indicator
+    const loadingEl = document.getElementById('detail-loading');
+    const targetEl = document.getElementById('target-content');
+
+    loadingEl.style.display = 'flex';
+    targetEl.style.opacity = '0.5';
+
+    // Call MyMemory API
+    const sourceText = item.sourceText;
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(sourceText)}&langpair=${fromLang}|${toLang}`;
+
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        if (data && data.responseData && data.responseData.translatedText) {
+          const newTranslation = data.responseData.translatedText;
+
+          // Update display
+          targetEl.textContent = newTranslation;
+
+          // Update item data
+          item.sourceLang = fromLang;
+          item.targetLang = toLang;
+          item.translatedText = newTranslation;
+          item.confidence = data.responseData.match || null;
+
+          // Update confidence display
+          if (item.confidence) {
+            document.getElementById('confidence-info').style.display = 'block';
+            document.getElementById('detail-confidence').textContent = `${Math.round(item.confidence * 100)}%`;
+          } else {
+            document.getElementById('confidence-info').style.display = 'none';
+          }
+
+          // Save updated item to storage
+          chrome.storage.local.set({ translationHistory: allHistory }, function() {
+            applyFilters(); // Refresh the main view
+          });
+        } else {
+          targetEl.textContent = 'Translation failed';
+        }
+      })
+      .catch(error => {
+        console.error('Translation error:', error);
+        targetEl.textContent = 'Translation failed';
+      })
+      .finally(() => {
+        loadingEl.style.display = 'none';
+        targetEl.style.opacity = '1';
+      });
+  }
+
+  function closeDetailsModal() {
+    const modal = document.getElementById('details-modal');
+    if (modal) {
+      modal.style.display = 'none';
+      document.body.style.overflow = 'auto';
     }
   }
 
