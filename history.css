@@ -275,7 +275,7 @@ body {
 }
 
 .language-pair {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #2d3748;
   color: white;
   padding: 4px 12px;
   border-radius: 20px;
@@ -298,13 +298,13 @@ body {
 }
 
 .card-btn.favorite {
-  background-color: #ffc107;
-  color: #333333;
+  background-color: #f59e0b;
+  color: white;
 }
 
 .card-btn.favorite.active {
-  background-color: #ff9800;
-  color: #333333;
+  background-color: #d97706;
+  color: white;
 }
 
 .card-btn.copy {
@@ -376,6 +376,15 @@ body {
 
 .timestamp {
   font-style: italic;
+  cursor: help;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  transition: color 0.2s ease;
+}
+
+.timestamp:hover {
+  color: #333;
 }
 
 .confidence {

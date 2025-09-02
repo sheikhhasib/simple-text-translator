@@ -274,16 +274,17 @@ input:checked + .slider:before {
 }
 
 .history-btn.favorite {
-  background-color: #ff9800;
+  background-color: #f59e0b;
+  color: white;
 }
 
 .history-btn.favorite:hover {
-  background-color: #e68900;
+  background-color: #d97706;
 }
 
 .history-btn.favorite.active {
-  background-color: #ffc107;
-  color: #333;
+  background-color: #b45309;
+  color: white;
 }
 
 .no-history {

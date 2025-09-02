@@ -219,6 +219,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function createHistoryCard(item) {
     const date = new Date(item.timestamp);
     const timeAgo = formatTimeAgo(item.timestamp);
+    const fullDateTime = date.toLocaleString(); // Full date and time for hover
     const confidence = item.confidence ? Math.round(item.confidence * 100) : null;
 
     return `
@@ -255,7 +256,7 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
 
         <div class="card-footer">
-          <span class="timestamp">${timeAgo}</span>
+          <span class="timestamp" title="${fullDateTime}">${timeAgo}</span>
           ${confidence ? `<span class="confidence">${confidence}% confidence</span>` : ''}
         </div>
       </div>
