@@ -334,10 +334,28 @@ body {
 }
 
 .translation-arrow {
-  color: #666;
-  margin: 8px 0;
+  color: #4CAF50;
+  margin: 12px 0;
   text-align: center;
   font-size: 18px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0.8;
+  transition: all 0.3s ease;
+}
+
+.translation-arrow svg {
+  transition: transform 0.3s ease;
+}
+
+.history-card:hover .translation-arrow {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.history-card:hover .translation-arrow svg {
+  transform: scale(1.1);
 }
 
 .translated-text {

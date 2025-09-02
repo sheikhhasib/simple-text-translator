@@ -245,7 +245,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
         <div class="translation-content">
           <div class="source-text">${escapeHtml(item.sourceText)}</div>
-          <div class="translation-arrow">↓</div>
+          <div class="translation-arrow">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M13 7l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
           <div class="translated-text">${escapeHtml(item.translatedText)}</div>
         </div>
 
