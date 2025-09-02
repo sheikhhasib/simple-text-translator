@@ -437,7 +437,12 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
       e.stopPropagation();
       e.stopImmediatePropagation();
       e.preventDefault();
-      navigator.clipboard.writeText(text).then(() => {
+
+      // Always get the current translation text from the tooltip
+      const currentTranslationEl = tooltip.querySelector('.translation-text');
+      const currentTranslationText = currentTranslationEl ? currentTranslationEl.textContent : text;
+
+      navigator.clipboard.writeText(currentTranslationText).then(() => {
         copyButton.innerHTML = 'Copied!';
         copyButton.classList.add('success');
         setTimeout(() => {
