@@ -118,7 +118,7 @@ function hideTooltip() {
   }
 }
 
-function showTooltip(x, y, text, sourceText, fromLang, toLang) {
+function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu = false) {
   if (!tooltip) {
     // Create tooltip container
     tooltip = document.createElement('div');
@@ -163,13 +163,11 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
       }
 
       .language-container {
-        font-size: 10px;
+        font-size: 12px;
         font-weight: 600;
         color: rgba(255, 255, 255, 0.9);
         margin-bottom: 8px;
         text-align: center;
-        background: rgba(255, 255, 255, 0.15);
-        padding: 6px 8px;
         border-radius: 6px;
         display: flex;
         align-items: center;
@@ -199,7 +197,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
         color: #ffffff;
         padding: 3px 4px;
         border-radius: 4px;
-        font-size: 9px;
+        font-size: 12px;
         font-weight: 500;
         cursor: pointer;
         transition: all 0.2s ease;
@@ -775,7 +773,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
   tooltipElement.appendChild(tooltipContent);
 
   // Position the tooltip
-  positionTooltip(x, y);
+  positionTooltip(x, y, fromContextMenu);
 
   // Show tooltip with animation
   tooltipElement.style.display = 'block';
@@ -785,16 +783,23 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang) {
   isTooltipVisible = true;
 }
 
-function positionTooltip(x, y) {
+function positionTooltip(x, y, fromContextMenu = false) {
   if (!tooltip || !tooltip.tooltipElement) return;
 
-  // Get selection rectangle for better positioning
-  const selection = window.getSelection();
-  let rect = { left: x, right: x, top: y, bottom: y };
+  let rect;
 
-  if (selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    rect = range.getBoundingClientRect();
+  if (fromContextMenu) {
+    // For context menu, use the provided coordinates directly
+    rect = { left: x, right: x, top: y - 8, bottom: y }; // Slight offset for better positioning
+  } else {
+    // For text selection, try to get selection rectangle for better positioning
+    const selection = window.getSelection();
+    rect = { left: x, right: x, top: y, bottom: y };
+
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      rect = range.getBoundingClientRect();
+    }
   }
 
   // Initial positioning
@@ -1014,16 +1019,16 @@ function translateElementText() {
     // Get element position for tooltip placement
     const rect = lastRightClickedElement.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
-    const y = rect.top;
+    const y = rect.bottom; // Position below the element
 
     // Show translating tooltip
-    showTooltip(x, y, "Translating...", elementText, fromLang, toLang);
+    showTooltip(x, y, "Translating...", elementText, fromLang, toLang, true);
 
     // Translate the text
     translateText(elementText, fromLang, toLang, translationId)
       .then(translation => {
         if (translationId === currentTranslationId && translation) {
-          showTooltip(x, y, translation, elementText, fromLang, toLang);
+          showTooltip(x, y, translation, elementText, fromLang, toLang, true);
 
           // Save successful translation to history
           if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
@@ -1034,7 +1039,7 @@ function translateElementText() {
       .catch(error => {
         if (translationId === currentTranslationId) {
           console.error("Element translation error:", error);
-          showTooltip(x, y, "Translation failed", elementText, fromLang, toLang);
+          showTooltip(x, y, "Translation failed", elementText, fromLang, toLang, true);
         }
       });
   });

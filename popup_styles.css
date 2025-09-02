@@ -16,6 +16,10 @@ h3 {
   align-items: center;
 }
 
+#history-icon:hover svg path {
+  fill: #4CAF50;
+}
+
 #settings-icon:hover svg path {
   fill: #4CAF50;
 }
@@ -168,28 +172,6 @@ input:checked + .slider:before {
   border: 1px solid #ddd;
   box-sizing: border-box;
   margin-bottom: 8px;
-}
-
-.history-actions {
-  display: flex;
-  gap: 5px;
-  justify-content: center;
-}
-
-.small-btn {
-  padding: 4px 8px;
-  font-size: 12px;
-  background-color: #666;
-  color: white;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  width: auto;
-  margin: 0;
-}
-
-.small-btn:hover {
-  background-color: #555;
 }
 
 .history-list {

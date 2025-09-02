@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const swapLanguagesButton = document.getElementById('swap-languages');
   const toggleTranslate = document.getElementById('toggle-translate');
   const settingsIcon = document.getElementById('settings-icon');
+  const historyIcon = document.getElementById('history-icon');
 
   // Validate critical DOM elements
   if (!fromLangSelect || !toLangSelect) {
@@ -20,8 +21,6 @@ document.addEventListener('DOMContentLoaded', function () {
   // History elements
   const historySearch = document.getElementById('history-search');
   const historyList = document.getElementById('history-list');
-  const clearHistoryBtn = document.getElementById('clear-history');
-  const exportHistoryBtn = document.getElementById('export-history');
 
   let translationHistory = [];
 
@@ -215,53 +214,6 @@ document.addEventListener('DOMContentLoaded', function () {
       item.targetLang.toLowerCase().includes(searchTerm)
     );
     displayHistory(filteredHistory);
-  });
-
-  // Clear history
-  clearHistoryBtn.addEventListener('click', function() {
-    if (confirm('Are you sure you want to clear all translation history?')) {
-      chrome.storage.local.set({ translationHistory: [] }, function() {
-        translationHistory = [];
-        displayHistory([]);
-      });
-    }
-  });
-
-  // Export history
-  exportHistoryBtn.addEventListener('click', function() {
-    if (translationHistory.length === 0) {
-      alert('No history to export!');
-      return;
-    }
-
-    // Create JSON export with metadata
-    const exportData = {
-      metadata: {
-        version: '1.0',
-        exportDate: new Date().toISOString(),
-        totalItems: translationHistory.length,
-        source: 'Simple Text Translator'
-      },
-      translations: translationHistory.map(item => ({
-        id: item.id,
-        sourceText: decodeHtmlEntities(item.sourceText),
-        translatedText: decodeHtmlEntities(item.translatedText),
-        sourceLang: item.sourceLang,
-        targetLang: item.targetLang,
-        timestamp: item.timestamp,
-        isFavorite: item.isFavorite || false,
-        confidence: item.confidence || null
-      }))
-    };
-
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `translation_history_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
   });
 
   function populateLanguages(selectElement, languages) {
@@ -483,6 +435,12 @@ document.addEventListener('DOMContentLoaded', function () {
   if (settingsIcon) {
     settingsIcon.addEventListener('click', function () {
       chrome.runtime.openOptionsPage();
+    });
+  }
+
+  if (historyIcon) {
+    historyIcon.addEventListener('click', function () {
+      chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
     });
   }
 
