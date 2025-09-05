@@ -4,6 +4,13 @@ chrome.runtime.onInstalled.addListener(() => {
     id: 'translate-element',
     title: 'Translate this element',
     contexts: ['all']
+  }, () => {
+    // Error handling for context menu creation
+    if (chrome.runtime.lastError) {
+      console.error('Error creating context menu:', chrome.runtime.lastError);
+    } else {
+      console.log('Context menu created successfully');
+    }
   });
 });
 
@@ -14,6 +21,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     chrome.tabs.sendMessage(tab.id, {
       action: 'translateElement',
       frameId: info.frameId
+    }, (response) => {
+      // Error handling for message sending
+      if (chrome.runtime.lastError) {
+        console.error('Error sending message to content script:', chrome.runtime.lastError);
+      }
     });
   }
 });
@@ -67,4 +79,7 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     sendResponse({ status: "success" });
     return false; // Synchronous response
   }
+
+  // Return true to indicate we will send a response asynchronously
+  return true;
 });

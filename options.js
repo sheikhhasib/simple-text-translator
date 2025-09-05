@@ -224,20 +224,28 @@ document.addEventListener('DOMContentLoaded', function () {
       chrome.storage.sync.set({ 'selectedLanguages': selectedLanguages }, function () {
         if (chrome.runtime.lastError) {
           console.error('Error saving languages:', chrome.runtime.lastError);
-          messageArea.textContent = 'Error saving languages. Please try again.';
-          messageArea.style.color = 'red';
+          if (messageArea) {
+            messageArea.textContent = 'Error saving languages. Please try again.';
+            messageArea.style.color = 'red';
+          }
         } else {
-          messageArea.textContent = 'Languages saved!';
-          messageArea.style.color = 'green';
+          if (messageArea) {
+            messageArea.textContent = 'Languages saved!';
+            messageArea.style.color = 'green';
+          }
         }
-        setTimeout(() => {
-          messageArea.textContent = '';
-        }, 3000);
+        if (messageArea) {
+          setTimeout(() => {
+            messageArea.textContent = '';
+          }, 3000);
+        }
       });
     } catch (error) {
       console.error('Error in saveSelectedLanguages:', error);
-      messageArea.textContent = 'Error saving languages. Please try again.';
-      messageArea.style.color = 'red';
+      if (messageArea) {
+        messageArea.textContent = 'Error saving languages. Please try again.';
+        messageArea.style.color = 'red';
+      }
     }
   }
 
@@ -280,8 +288,10 @@ document.addEventListener('DOMContentLoaded', function () {
       renderLanguages();
     } catch (error) {
       console.error('Error rendering languages:', error);
-      messageArea.textContent = 'Error loading language options.';
-      messageArea.style.color = 'red';
+      if (messageArea) {
+        messageArea.textContent = 'Error loading language options.';
+        messageArea.style.color = 'red';
+      }
     }
   });
 });

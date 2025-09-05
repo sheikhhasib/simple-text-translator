@@ -7,14 +7,18 @@ A simple yet powerful Chrome Extension that allows you to translate selected tex
 ## Features
 
 *   **On-the-fly Translation:** Select any text on a webpage to see its translation in a subtle tooltip.
+*   **Context Menu Translation:** Right-click on any element to translate its text content.
 *   **Customizable Language List:** Choose your favorite languages to display in the popup for quick access.
 *   **Language Selection:** Choose your preferred source and target languages from your customized list.
-*   **Language Swap:** Easily swap between source and target languages with a dedicated button.
+*   **Language Swap:** Easily swap between source and target languages with a dedicated button in both popup and tooltip.
+*   **Persistent Language Preferences:** Language preferences are saved and synchronized across devices.
 *   **Copy to Clipboard:** A "Copy" button is available in the translation tooltip to copy the translated text.
 *   **Enable/Disable:** Quickly enable or disable the translation functionality from the popup.
 *   **Automatic Saving:** Your language preferences and settings are saved automatically.
+*   **Translation History:** View and manage your translation history with search and filter capabilities.
 *   **Debounced Translation:** Prevents excessive API calls by debouncing translation requests.
 *   **MyMemory API:** Utilizes the MyMemory API for reliable translation.
+*   **Long Text Support:** Automatically splits and translates long text selections.
 
 ## Screenshots
 
@@ -33,9 +37,25 @@ To install this extension in Google Chrome:
 
 ## Usage
 
+### Text Selection Translation
+
 1.  **Select Text:** On any webpage, simply select the text you wish to translate.
 2.  **View Translation:** A small tooltip will appear near the selected text showing the translation.
-3.  **Copy Translation:** Click the "Copy" button in the tooltip to copy the translated text to your clipboard.
+3.  **Change Languages:** Use the dropdowns in the tooltip to change source and target languages.
+4.  **Swap Languages:** Click the swap arrow button in the tooltip to quickly switch source and target languages.
+5.  **Copy Translation:** Click the "Copy" button in the tooltip to copy the translated text to your clipboard.
+
+### Context Menu Translation
+
+1.  **Right-click Element:** Right-click on any element containing text (buttons, links, paragraphs, etc.).
+2.  **Select "Translate this element":** Choose the context menu option to translate the element's text.
+3.  **View Translation:** A tooltip will appear below the element showing the translation.
+
+### Translation History
+
+1.  **Access History:** Click the history icon in the popup or open the dedicated history page.
+2.  **Search and Filter:** Use the search bar and filters to find specific translations.
+3.  **Manage Translations:** Mark translations as favorites, copy text, or delete entries.
 
 ## Configuration
 

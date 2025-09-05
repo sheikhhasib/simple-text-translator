@@ -59,7 +59,12 @@ document.addEventListener('DOMContentLoaded', function () {
   // History functionality
   function loadHistory() {
     chrome.storage.local.get(['translationHistory'], function(result) {
-      translationHistory = result.translationHistory || [];
+      if (chrome.runtime.lastError) {
+        console.error('Error loading translation history:', chrome.runtime.lastError);
+        translationHistory = [];
+      } else {
+        translationHistory = result.translationHistory || [];
+      }
       displayHistory(translationHistory);
     });
   }
@@ -124,7 +129,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const viewAllBtn = document.getElementById('view-all-history');
     if (viewAllBtn) {
       viewAllBtn.addEventListener('click', function() {
-        chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
+        chrome.tabs.create({ url: chrome.runtime.getURL('history.html') }, (tab) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error creating new tab:', chrome.runtime.lastError);
+          }
+        });
       });
     }
   }

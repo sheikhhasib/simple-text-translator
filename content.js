@@ -445,47 +445,27 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
     document.body.appendChild(tooltip);
 
     // Prevent events from propagating (attach to shadow DOM tooltip element)
-    tooltipElement.addEventListener('mousedown', function(e) {
+    // Consolidate multiple event listeners into a single handler
+    const preventPropagation = function(e) {
       e.stopPropagation();
       e.stopImmediatePropagation();
-    });
+    };
 
-    tooltipElement.addEventListener('mouseup', function(e) {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-
-    tooltipElement.addEventListener('click', function(e) {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-
-    tooltipElement.addEventListener('mousemove', function(e) {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-
-    tooltipElement.addEventListener('mouseenter', function(e) {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-
-    tooltipElement.addEventListener('mouseover', function(e) {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-
-    tooltipElement.addEventListener('selectstart', function(e) {
+    const preventDefaultAndPropagation = function(e) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-    });
+    };
 
-    tooltipElement.addEventListener('select', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
+    // Add event listeners to prevent tooltip from closing when interacting with it
+    tooltipElement.addEventListener('mousedown', preventPropagation);
+    tooltipElement.addEventListener('mouseup', preventPropagation);
+    tooltipElement.addEventListener('click', preventPropagation);
+    tooltipElement.addEventListener('mousemove', preventPropagation);
+    tooltipElement.addEventListener('mouseenter', preventPropagation);
+    tooltipElement.addEventListener('mouseover', preventPropagation);
+    tooltipElement.addEventListener('selectstart', preventDefaultAndPropagation);
+    tooltipElement.addEventListener('select', preventDefaultAndPropagation);
   }
 
   // Get references to shadow DOM elements
@@ -645,29 +625,32 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
         targetLangSelect.appendChild(option);
       });
 
-      // Handle source language change
-      sourceLangSelect.addEventListener('change', function(e) {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        e.preventDefault();
-
-        const newSourceLang = e.target.value;
-        const currentTargetLang = targetLangSelect.value;
-        const currentFromLang = tooltipElement.dataset.currentFromLang;
-
+      // Function to handle language changes and re-translation
+      function handleLanguageChange(newLang, currentLang, otherLang, isSourceLang) {
         // Only translate if there's an actual change AND languages are different
-        if (newSourceLang !== currentFromLang && newSourceLang !== currentTargetLang) {
+        if (newLang !== currentLang && newLang !== otherLang) {
           // Update stored language state
-          tooltipElement.dataset.currentFromLang = newSourceLang;
-
-          // Save the new source language preference
-          chrome.storage.sync.set({ fromLanguage: newSourceLang }, function() {
-            if (chrome.runtime.lastError) {
-              console.error('Error saving fromLanguage preference:', chrome.runtime.lastError);
-            } else {
-              console.log('Successfully saved fromLanguage preference:', newSourceLang);
-            }
-          });
+          if (isSourceLang) {
+            tooltipElement.dataset.currentFromLang = newLang;
+            // Save the new source language preference
+            chrome.storage.sync.set({ fromLanguage: newLang }, function() {
+              if (chrome.runtime.lastError) {
+                console.error('Error saving fromLanguage preference:', chrome.runtime.lastError);
+              } else {
+                console.log('Successfully saved fromLanguage preference:', newLang);
+              }
+            });
+          } else {
+            tooltipElement.dataset.currentToLang = newLang;
+            // Save the new target language preference
+            chrome.storage.sync.set({ toLanguage: newLang }, function() {
+              if (chrome.runtime.lastError) {
+                console.error('Error saving toLanguage preference:', chrome.runtime.lastError);
+              } else {
+                console.log('Successfully saved toLanguage preference:', newLang);
+              }
+            });
+          }
 
           // Show loading state
           const translationTextEl = tooltipElement.querySelector('.translation-text');
@@ -682,7 +665,10 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
           const newTranslationId = ++currentTranslationId;
 
           // Fetch new translation
-          translateText(sourceText, newSourceLang, currentTargetLang, newTranslationId)
+          const sourceLang = isSourceLang ? newLang : otherLang;
+          const targetLang = isSourceLang ? otherLang : newLang;
+
+          translateText(sourceText, sourceLang, targetLang, newTranslationId)
             .then(translation => {
               if (newTranslationId === currentTranslationId && translation) {
                 // Update the tooltip with new translation
@@ -692,7 +678,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
 
                 // Save the new translation to history if successful
                 if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                  saveTranslationToHistory(sourceText, translation, newSourceLang, currentTargetLang);
+                  saveTranslationToHistory(sourceText, translation, sourceLang, targetLang);
                 }
               }
             })
@@ -705,6 +691,19 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
               }
             });
         }
+      }
+
+      // Handle source language change
+      sourceLangSelect.addEventListener('change', function(e) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        e.preventDefault();
+
+        const newSourceLang = e.target.value;
+        const currentFromLang = tooltipElement.dataset.currentFromLang;
+        const currentToLang = targetLangSelect.value;
+
+        handleLanguageChange(newSourceLang, currentFromLang, currentToLang, true);
       });
 
       // Handle target language change
@@ -714,103 +713,33 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
         e.preventDefault();
 
         const newTargetLang = e.target.value;
-        const currentSourceLang = sourceLangSelect.value;
         const currentToLang = tooltipElement.dataset.currentToLang;
+        const currentFromLang = sourceLangSelect.value;
 
-        // Only translate if there's an actual change AND languages are different
-        if (newTargetLang !== currentToLang && newTargetLang !== currentSourceLang) {
-          // Update stored language state
-          tooltipElement.dataset.currentToLang = newTargetLang;
-
-          // Save the new target language preference
-          chrome.storage.sync.set({ toLanguage: newTargetLang }, function() {
-            if (chrome.runtime.lastError) {
-              console.error('Error saving toLanguage preference:', chrome.runtime.lastError);
-            } else {
-              console.log('Successfully saved toLanguage preference:', newTargetLang);
-            }
-          });
-
-          // Show loading state
-          const translationTextEl = tooltipElement.querySelector('.translation-text');
-          if (translationTextEl) {
-            translationTextEl.textContent = 'Translating...';
-          }
-
-          // Get the source text from the stored data attribute (works for both text selection and context menu)
-          const sourceText = tooltipElement.dataset.sourceText || window.getSelection().toString().trim();
-
-          // Increment translation ID for new request
-          const newTranslationId = ++currentTranslationId;
-
-          // Fetch new translation
-          translateText(sourceText, currentSourceLang, newTargetLang, newTranslationId)
-            .then(translation => {
-              if (newTranslationId === currentTranslationId && translation) {
-                // Update the tooltip with new translation
-                if (translationTextEl) {
-                  translationTextEl.textContent = translation;
-                }
-
-                // Save the new translation to history if successful
-                if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                  saveTranslationToHistory(sourceText, translation, currentSourceLang, newTargetLang);
-                }
-              }
-            })
-            .catch(error => {
-              if (newTranslationId === currentTranslationId) {
-                console.error('Re-translation error:', error);
-                if (translationTextEl) {
-                  translationTextEl.textContent = 'Translation failed';
-                }
-              }
-            });
-        }
+        handleLanguageChange(newTargetLang, currentToLang, currentFromLang, false);
       });
 
       // Prevent dropdown events from closing tooltip
       [sourceLangSelect, targetLangSelect].forEach(select => {
-        select.addEventListener('mousedown', function(e) {
+        const preventPropagation = function(e) {
           e.stopPropagation();
           e.stopImmediatePropagation();
-        });
+        };
 
-        select.addEventListener('mouseup', function(e) {
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-        });
-
-        select.addEventListener('click', function(e) {
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-        });
-
-        select.addEventListener('focus', function(e) {
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-        });
-
-        select.addEventListener('mouseenter', function(e) {
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-        });
-
-        select.addEventListener('mouseover', function(e) {
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-        });
-
-        select.addEventListener('mousemove', function(e) {
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-        });
-
-        select.addEventListener('selectstart', function(e) {
+        const preventDefaultAndPropagation = function(e) {
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
-        });
+        };
+
+        select.addEventListener('mousedown', preventPropagation);
+        select.addEventListener('mouseup', preventPropagation);
+        select.addEventListener('click', preventPropagation);
+        select.addEventListener('focus', preventPropagation);
+        select.addEventListener('mouseenter', preventPropagation);
+        select.addEventListener('mouseover', preventPropagation);
+        select.addEventListener('mousemove', preventPropagation);
+        select.addEventListener('selectstart', preventDefaultAndPropagation);
       });
 
       // Assemble the language container
