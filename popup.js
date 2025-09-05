@@ -24,6 +24,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
   let translationHistory = [];
 
+  // Listen for storage changes to update UI when preferences change from tooltip
+  chrome.storage.onChanged.addListener(function(changes, namespace) {
+    if (namespace === 'sync') {
+      if (changes.fromLanguage) {
+        fromLangSelect.value = changes.fromLanguage.newValue;
+      }
+      if (changes.toLanguage) {
+        toLangSelect.value = changes.toLanguage.newValue;
+      }
+    }
+  });
+
   // Tab switching functionality
   tabButtons.forEach(button => {
     button.addEventListener('click', function() {

@@ -188,6 +188,20 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
         font-size: 11px;
         margin: 0 2px;
         flex-shrink: 0;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+      }
+
+      .lang-arrow:hover {
+        color: rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
       }
 
       .source-lang-select,
@@ -345,6 +359,11 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
           font-size: 9px;
         }
 
+        .lang-arrow {
+          font-size: 9px;
+          margin: 0 1px;
+        }
+
         .source-lang-select,
         .target-lang-select {
           font-size: 8px;
@@ -476,6 +495,9 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
   tooltipElement.dataset.currentFromLang = fromLang;
   tooltipElement.dataset.currentToLang = toLang;
 
+  // Store the source text in the tooltip data attributes for context menu translations
+  tooltipElement.dataset.sourceText = sourceText;
+
   // Clear previous content
   tooltipElement.innerHTML = '';
 
@@ -497,19 +519,8 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
         { code: 'es', name: 'Spanish' },
         { code: 'fr', name: 'French' },
         { code: 'de', name: 'German' },
-        { code: 'it', name: 'Italian' },
-        { code: 'pt', name: 'Portuguese' },
-        { code: 'ru', name: 'Russian' },
-        { code: 'ja', name: 'Japanese' },
-        { code: 'ko', name: 'Korean' },
-        { code: 'zh-CN', name: 'Chinese' },
-        { code: 'ar', name: 'Arabic' },
-        { code: 'hi', name: 'Hindi' },
-        { code: 'tr', name: 'Turkish' },
-        { code: 'nl', name: 'Dutch' },
-        { code: 'sv', name: 'Swedish' },
-        { code: 'pl', name: 'Polish' },
-        { code: 'cs', name: 'Czech' }
+        { code: 'zh-CN', name: 'Chinese (Simplified)' },
+        { code: 'hi', name: 'Hindi' }
       ];
 
       let languages = defaultLanguages;
@@ -537,10 +548,88 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
         sourceLangSelect.appendChild(option);
       });
 
-      // Create arrow separator
-      const arrowSeparator = document.createElement('span');
+      // Create arrow separator as a clickable button for swapping languages
+      const arrowSeparator = document.createElement('button');
       arrowSeparator.className = 'lang-arrow';
-      arrowSeparator.textContent = ' → ';
+      arrowSeparator.textContent = ' ⇄ '; // Using a double-headed arrow for swap
+      arrowSeparator.title = 'Swap languages';
+      arrowSeparator.style.background = 'none';
+      arrowSeparator.style.border = 'none';
+      arrowSeparator.style.color = 'rgba(255, 255, 255, 0.7)';
+      arrowSeparator.style.fontSize = '11px';
+      arrowSeparator.style.margin = '0 2px';
+      arrowSeparator.style.flexShrink = '0';
+      arrowSeparator.style.cursor = 'pointer';
+      arrowSeparator.style.padding = '0';
+      arrowSeparator.style.display = 'flex';
+      arrowSeparator.style.alignItems = 'center';
+      arrowSeparator.style.justifyContent = 'center';
+
+      // Add click event for swapping languages
+      arrowSeparator.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        e.preventDefault();
+
+        const currentFromLang = sourceLangSelect.value;
+        const currentToLang = targetLangSelect.value;
+
+        // Swap the language values
+        sourceLangSelect.value = currentToLang;
+        targetLangSelect.value = currentFromLang;
+
+        // Update the tooltip's stored language state
+        tooltipElement.dataset.currentFromLang = currentToLang;
+        tooltipElement.dataset.currentToLang = currentFromLang;
+
+        // Save both language preferences
+        chrome.storage.sync.set({
+          fromLanguage: currentToLang,
+          toLanguage: currentFromLang
+        }, function() {
+          if (chrome.runtime.lastError) {
+            console.error('Error saving swapped language preferences:', chrome.runtime.lastError);
+          } else {
+            console.log('Successfully saved swapped language preferences');
+          }
+        });
+
+        // Show loading state
+        const translationTextEl = tooltipElement.querySelector('.translation-text');
+        if (translationTextEl) {
+          translationTextEl.textContent = 'Translating...';
+        }
+
+        // Get the source text from the stored data attribute (works for both text selection and context menu)
+        const sourceText = tooltipElement.dataset.sourceText || window.getSelection().toString().trim();
+
+        // Increment translation ID for new request
+        const newTranslationId = ++currentTranslationId;
+
+        // Fetch new translation with swapped languages
+        translateText(sourceText, currentToLang, currentFromLang, newTranslationId)
+          .then(translation => {
+            if (newTranslationId === currentTranslationId && translation) {
+              // Update the tooltip with new translation
+              if (translationTextEl) {
+                translationTextEl.textContent = translation;
+              }
+
+              // Save the new translation to history if successful
+              if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
+                saveTranslationToHistory(sourceText, translation, currentToLang, currentFromLang);
+              }
+            }
+          })
+          .catch(error => {
+            if (newTranslationId === currentTranslationId) {
+              console.error('Re-translation error:', error);
+              if (translationTextEl) {
+                translationTextEl.textContent = 'Translation failed';
+              }
+            }
+          });
+      });
 
       // Create target language dropdown
       const targetLangSelect = document.createElement('select');
@@ -571,20 +660,29 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
           // Update stored language state
           tooltipElement.dataset.currentFromLang = newSourceLang;
 
+          // Save the new source language preference
+          chrome.storage.sync.set({ fromLanguage: newSourceLang }, function() {
+            if (chrome.runtime.lastError) {
+              console.error('Error saving fromLanguage preference:', chrome.runtime.lastError);
+            } else {
+              console.log('Successfully saved fromLanguage preference:', newSourceLang);
+            }
+          });
+
           // Show loading state
           const translationTextEl = tooltipElement.querySelector('.translation-text');
           if (translationTextEl) {
             translationTextEl.textContent = 'Translating...';
           }
 
-          // Get the source text from the current selection
-          const selectedText = window.getSelection().toString().trim();
+          // Get the source text from the stored data attribute (works for both text selection and context menu)
+          const sourceText = tooltipElement.dataset.sourceText || window.getSelection().toString().trim();
 
           // Increment translation ID for new request
           const newTranslationId = ++currentTranslationId;
 
           // Fetch new translation
-          translateText(selectedText, newSourceLang, currentTargetLang, newTranslationId)
+          translateText(sourceText, newSourceLang, currentTargetLang, newTranslationId)
             .then(translation => {
               if (newTranslationId === currentTranslationId && translation) {
                 // Update the tooltip with new translation
@@ -594,7 +692,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
 
                 // Save the new translation to history if successful
                 if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                  saveTranslationToHistory(selectedText, translation, newSourceLang, currentTargetLang);
+                  saveTranslationToHistory(sourceText, translation, newSourceLang, currentTargetLang);
                 }
               }
             })
@@ -624,20 +722,29 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
           // Update stored language state
           tooltipElement.dataset.currentToLang = newTargetLang;
 
+          // Save the new target language preference
+          chrome.storage.sync.set({ toLanguage: newTargetLang }, function() {
+            if (chrome.runtime.lastError) {
+              console.error('Error saving toLanguage preference:', chrome.runtime.lastError);
+            } else {
+              console.log('Successfully saved toLanguage preference:', newTargetLang);
+            }
+          });
+
           // Show loading state
           const translationTextEl = tooltipElement.querySelector('.translation-text');
           if (translationTextEl) {
             translationTextEl.textContent = 'Translating...';
           }
 
-          // Get the source text from the current selection
-          const selectedText = window.getSelection().toString().trim();
+          // Get the source text from the stored data attribute (works for both text selection and context menu)
+          const sourceText = tooltipElement.dataset.sourceText || window.getSelection().toString().trim();
 
           // Increment translation ID for new request
           const newTranslationId = ++currentTranslationId;
 
           // Fetch new translation
-          translateText(selectedText, currentSourceLang, newTargetLang, newTranslationId)
+          translateText(sourceText, currentSourceLang, newTargetLang, newTranslationId)
             .then(translation => {
               if (newTranslationId === currentTranslationId && translation) {
                 // Update the tooltip with new translation
@@ -647,7 +754,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
 
                 // Save the new translation to history if successful
                 if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                  saveTranslationToHistory(selectedText, translation, currentSourceLang, newTargetLang);
+                  saveTranslationToHistory(sourceText, translation, currentSourceLang, newTargetLang);
                 }
               }
             })
