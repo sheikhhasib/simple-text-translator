@@ -16,6 +16,29 @@ All data is stored locally in your browser using Chrome's storage API:
 - Translation history (text you've translated)
 - Custom language lists
 
+## Data Usage
+
+The extension stores the following types of data locally:
+
+1. **Translation History**:
+   - Source text that you translate
+   - Translated text results
+   - Source and target language codes
+   - Timestamps of translations
+   - Favorite status of translations
+   - Translation confidence scores (when available)
+
+2. **User Preferences**:
+   - Selected source and target languages
+   - Enabled/disabled status of the extension
+   - Custom language lists for the popup interface
+
+3. **Interface Settings**:
+   - Tab preferences in the popup
+   - Search history terms
+
+All this data is stored locally in your browser and is never transmitted to any external servers except for the text that needs to be translated through the MyMemory API.
+
 ## Text Translation
 
 When you use the translation feature:
