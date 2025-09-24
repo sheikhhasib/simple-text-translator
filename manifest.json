@@ -22,6 +22,7 @@
         "https://*/*"
       ],
       "js": [
+        "language-map.js",
         "content.js"
       ]
     }
@@ -38,7 +39,10 @@
   "options_page": "options.html",
   "web_accessible_resources": [
     {
-      "resources": ["history.html"],
+      "resources": [
+        "history.html",
+        "language-map.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ],

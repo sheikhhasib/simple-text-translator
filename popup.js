@@ -274,6 +274,7 @@ document.addEventListener('DOMContentLoaded', function () {
         option.textContent = lang.name || lang.language || lang.code;
         selectElement.appendChild(option);
       });
+
     } catch (error) {
       console.error('Error in populateLanguages:', error);
     }
@@ -337,18 +338,15 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
 
-      const defaultLanguages = [
-        { code: 'en', name: 'English' },
-        { code: 'bn', name: 'Bangla' },
-        { code: 'es', name: 'Spanish' },
-        { code: 'fr', name: 'French' },
-        { code: 'de', name: 'German' },
-        { code: 'zh-CN', name: 'Chinese (Simplified)' },
-        { code: 'hi', name: 'Hindi' }
-      ];
+      // Use the centralized language mapping
+      let languages = (typeof window.LanguageMap !== 'undefined')
+        ? window.LanguageMap.ALL_LANGUAGES.map(lang => ({
+          code: lang.code,
+          name: lang.language
+        }))
+        : [];
 
       // Ensure we have valid language data
-      let languages = defaultLanguages;
       if (items.selectedLanguages && Array.isArray(items.selectedLanguages) && items.selectedLanguages.length > 0) {
         // Validate language structure and convert if needed
         languages = items.selectedLanguages.map(lang => {
@@ -396,15 +394,13 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function initializeWithDefaults() {
-    const defaultLanguages = [
-      { code: 'en', name: 'English' },
-      { code: 'bn', name: 'Bangla' },
-      { code: 'es', name: 'Spanish' },
-      { code: 'fr', name: 'French' },
-      { code: 'de', name: 'German' },
-      { code: 'zh-CN', name: 'Chinese (Simplified)' },
-      { code: 'hi', name: 'Hindi' }
-    ];
+    // Use the centralized language mapping
+    let defaultLanguages = (typeof window.LanguageMap !== 'undefined')
+      ? window.LanguageMap.ALL_LANGUAGES.map(lang => ({
+        code: lang.code,
+        name: lang.language
+      }))
+      : [];
 
     if (fromLangSelect && toLangSelect) {
       populateLanguages(fromLangSelect, defaultLanguages);

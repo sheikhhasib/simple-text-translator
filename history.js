@@ -71,14 +71,23 @@ document.addEventListener('DOMContentLoaded', function() {
   function populateLanguageFilter() {
     const languagePairs = new Set();
     allHistory.forEach(item => {
-      languagePairs.add(`${item.sourceLang} → ${item.targetLang}`);
+      // Only add pairs where source and target languages are different
+      if (item.sourceLang !== item.targetLang) {
+        languagePairs.add(`${item.sourceLang} → ${item.targetLang}`);
+      }
     });
 
     languageFilter.innerHTML = '<option value="">All Languages</option>';
     Array.from(languagePairs).sort().forEach(pair => {
       const option = document.createElement('option');
       option.value = pair;
-      option.textContent = pair;
+
+      // Convert language codes to human-readable names
+      const [sourceCode, targetCode] = pair.split(' → ');
+      const sourceName = getLanguageName(sourceCode);
+      const targetName = getLanguageName(targetCode);
+
+      option.textContent = `${sourceName} → ${targetName}`;
       languageFilter.appendChild(option);
     });
   }
@@ -90,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const stats = {
       total: allHistory.length,
       favorites: allHistory.filter(item => item.isFavorite).length,
-      languagePairs: new Set(allHistory.map(item => `${item.sourceLang}-${item.targetLang}`)).size,
+      languagePairs: new Set(allHistory.map(item => `${getLanguageName(item.sourceLang)}-${getLanguageName(item.targetLang)}`)).size,
       thisMonth: allHistory.filter(item => new Date(item.timestamp) >= thisMonth).length
     };
 
@@ -135,16 +144,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Filter history
     filteredHistory = allHistory.filter(item => {
-      // Search filter
+      // Search filter - include human-readable language names in search
       const matchesSearch = !searchTerm ||
         item.sourceText.toLowerCase().includes(searchTerm) ||
         item.translatedText.toLowerCase().includes(searchTerm) ||
         item.sourceLang.toLowerCase().includes(searchTerm) ||
-        item.targetLang.toLowerCase().includes(searchTerm);
+        item.targetLang.toLowerCase().includes(searchTerm) ||
+        getLanguageName(item.sourceLang).toLowerCase().includes(searchTerm) ||
+        getLanguageName(item.targetLang).toLowerCase().includes(searchTerm);
 
-      // Language filter
-      const matchesLanguage = !selectedLanguage ||
-        `${item.sourceLang} → ${item.targetLang}` === selectedLanguage;
+      // Language filter - convert human-readable name back to code format for comparison
+      let matchesLanguage = true;
+      if (selectedLanguage) {
+        // Convert the selected human-readable language back to code format for comparison
+        const [sourceName, targetName] = selectedLanguage.split(' → ');
+        const sourceCode = getLanguageCode(sourceName);
+        const targetCode = getLanguageCode(targetName);
+
+        matchesLanguage = `${item.sourceLang} → ${item.targetLang}` === `${sourceCode} → ${targetCode}`;
+      }
 
       // Favorites filter
       let matchesFavorites = true;
@@ -186,8 +204,8 @@ document.addEventListener('DOMContentLoaded', function() {
         break;
       case 'language':
         filteredHistory.sort((a, b) => {
-          const aPair = `${a.sourceLang}-${a.targetLang}`;
-          const bPair = `${b.sourceLang}-${b.targetLang}`;
+          const aPair = `${getLanguageName(a.sourceLang)}-${getLanguageName(a.targetLang)}`;
+          const bPair = `${getLanguageName(b.sourceLang)}-${getLanguageName(b.targetLang)}`;
           return aPair.localeCompare(bPair);
         });
         break;
@@ -225,7 +243,7 @@ document.addEventListener('DOMContentLoaded', function() {
     return `
       <div class="history-card ${item.isFavorite ? 'favorite' : ''}" data-id="${item.id}" data-clickable="true">
         <div class="card-header">
-          <div class="language-pair">${item.sourceLang.toUpperCase()} → ${item.targetLang.toUpperCase()}</div>
+          <div class="language-pair">${getLanguageName(item.sourceLang)} → ${getLanguageName(item.targetLang)}</div>
           <div class="card-actions">
             <button class="card-btn favorite ${item.isFavorite ? 'active' : ''}"
                     data-action="favorite" data-id="${item.id}"
@@ -535,13 +553,13 @@ document.addEventListener('DOMContentLoaded', function() {
       languages.forEach(lang => {
         const fromOption = document.createElement('option');
         fromOption.value = lang.code;
-        fromOption.textContent = lang.name;
+        fromOption.textContent = getLanguageName(lang.code);
         fromOption.selected = lang.code === item.sourceLang;
         fromSelect.appendChild(fromOption);
 
         const toOption = document.createElement('option');
         toOption.value = lang.code;
-        toOption.textContent = lang.name;
+        toOption.textContent = getLanguageName(lang.code);
         toOption.selected = lang.code === item.targetLang;
         toSelect.appendChild(toOption);
       });
@@ -940,7 +958,9 @@ document.addEventListener('DOMContentLoaded', function() {
         sourceText: decodeHtmlEntities(item.sourceText),
         translatedText: decodeHtmlEntities(item.translatedText),
         sourceLang: item.sourceLang,
+        sourceLangName: getLanguageName(item.sourceLang),
         targetLang: item.targetLang,
+        targetLangName: getLanguageName(item.targetLang),
         timestamp: item.timestamp,
         isFavorite: item.isFavorite || false,
         confidence: item.confidence || null
@@ -1110,3 +1130,69 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
 });
+
+// Helper function to get human-readable language name from code
+function getLanguageName(code) {
+  // Use the centralized language mapping
+  if (typeof window.LanguageMap !== 'undefined') {
+    return window.LanguageMap.getLanguageName(code);
+  }
+
+  // Simple fallback for essential languages only
+  const languageMap = {
+    'en': 'English',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German',
+    'it': 'Italian',
+    'pt': 'Portuguese',
+    'ru': 'Russian',
+    'ja': 'Japanese',
+    'ko': 'Korean',
+    'zh-CN': 'Chinese (Simplified)',
+    'ar': 'Arabic',
+    'hi': 'Hindi',
+    'bn': 'Bengali',
+    'tr': 'Turkish',
+    'nl': 'Dutch',
+    'sv': 'Swedish',
+    'pl': 'Polish',
+    'cs': 'Czech'
+  };
+
+  return languageMap[code] || code;
+}
+
+// Helper function to get language code from human-readable name
+function getLanguageCode(name) {
+  // Use the centralized language mapping
+  if (typeof window.LanguageMap !== 'undefined') {
+    return window.LanguageMap.getLanguageCode(name);
+  }
+
+  // Simple fallback for essential languages only
+  const languageMap = {
+    'en': 'English',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German',
+    'it': 'Italian',
+    'pt': 'Portuguese',
+    'ru': 'Russian',
+    'ja': 'Japanese',
+    'ko': 'Korean',
+    'zh-CN': 'Chinese (Simplified)',
+    'ar': 'Arabic',
+    'hi': 'Hindi',
+    'bn': 'Bengali',
+    'tr': 'Turkish',
+    'nl': 'Dutch',
+    'sv': 'Swedish',
+    'pl': 'Polish',
+    'cs': 'Czech'
+  };
+
+  // Find the code that corresponds to the name
+  const code = Object.keys(languageMap).find(key => languageMap[key] === name);
+  return code || name;
+}

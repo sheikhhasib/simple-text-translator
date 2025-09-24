@@ -1277,3 +1277,295 @@ function extractTextFromElement(element) {
   return text;
 }
 
+// Use the centralized language mapping if available
+function getLanguageName(code) {
+  if (typeof window.LanguageMap !== 'undefined') {
+    return window.LanguageMap.getLanguageName(code);
+  }
+
+  // Simple fallback for essential languages only
+  const languageMap = {
+    'en': 'English',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German',
+    'it': 'Italian',
+    'pt': 'Portuguese',
+    'ru': 'Russian',
+    'ja': 'Japanese',
+    'ko': 'Korean',
+    'zh-CN': 'Chinese (Simplified)',
+    'ar': 'Arabic',
+    'hi': 'Hindi',
+    'bn': 'Bengali',
+    'tr': 'Turkish',
+    'nl': 'Dutch',
+    'sv': 'Swedish',
+    'pl': 'Polish',
+    'cs': 'Czech'
+  };
+
+  return languageMap[code] || code;
+}
+
+function populateLanguageSelectors(translationBox, sourceText, translationId) {
+  // Get available languages from storage or use defaults
+  chrome.storage.sync.get(['selectedLanguages'], function(result) {
+    // Use the centralized language mapping
+    let languages = (typeof window.LanguageMap !== 'undefined')
+      ? window.LanguageMap.ALL_LANGUAGES.map(lang => ({
+        code: lang.code,
+        name: lang.language
+      }))
+      : [];
+
+    if (result.selectedLanguages && Array.isArray(result.selectedLanguages) && result.selectedLanguages.length > 0) {
+      languages = result.selectedLanguages.map(lang => ({
+        code: lang.code,
+        name: lang.name || lang.language || lang.code
+      }));
+    }
+
+    // Sort languages alphabetically
+    languages.sort((a, b) => {
+      const nameA = getLanguageName(a.code);
+      const nameB = getLanguageName(b.code);
+      return nameA.localeCompare(nameB);
+    });
+
+    // Create source language dropdown
+    const sourceLangSelect = document.createElement('select');
+    sourceLangSelect.className = 'source-lang-select';
+    sourceLangSelect.title = 'Change source language';
+
+    // Populate source language options
+    languages.forEach(lang => {
+      const option = document.createElement('option');
+      option.value = lang.code;
+      option.textContent = lang.name;
+      sourceLangSelect.appendChild(option);
+    });
+
+    // Create arrow separator as a clickable button for swapping languages
+    const arrowSeparator = document.createElement('button');
+    arrowSeparator.className = 'lang-arrow';
+    arrowSeparator.textContent = ' ⇄ '; // Using a double-headed arrow for swap
+    arrowSeparator.title = 'Swap languages';
+    arrowSeparator.style.background = 'none';
+    arrowSeparator.style.border = 'none';
+    arrowSeparator.style.color = 'rgba(255, 255, 255, 0.7)';
+    arrowSeparator.style.fontSize = '11px';
+    arrowSeparator.style.margin = '0 2px';
+    arrowSeparator.style.flexShrink = '0';
+    arrowSeparator.style.cursor = 'pointer';
+    arrowSeparator.style.padding = '0';
+    arrowSeparator.style.display = 'flex';
+    arrowSeparator.style.alignItems = 'center';
+    arrowSeparator.style.justifyContent = 'center';
+
+    // Add click event for swapping languages
+    arrowSeparator.addEventListener('click', function(e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      e.preventDefault();
+
+      const currentFromLang = sourceLangSelect.value;
+      const currentToLang = targetLangSelect.value;
+
+      // Swap the language values
+      sourceLangSelect.value = currentToLang;
+      targetLangSelect.value = currentFromLang;
+
+      // Update the tooltip's stored language state
+      translationBox.dataset.currentFromLang = currentToLang;
+      translationBox.dataset.currentToLang = currentFromLang;
+
+      // Save both language preferences
+      chrome.storage.sync.set({
+        fromLanguage: currentToLang,
+        toLanguage: currentFromLang
+      }, function() {
+        if (chrome.runtime.lastError) {
+          console.error('Error saving swapped language preferences:', chrome.runtime.lastError);
+        } else {
+          console.log('Successfully saved swapped language preferences');
+        }
+      });
+
+      // Show loading state
+      const translationTextEl = translationBox.querySelector('.translation-text');
+      if (translationTextEl) {
+        translationTextEl.textContent = 'Translating...';
+      }
+
+      // Get the source text from the stored data attribute (works for both text selection and context menu)
+      const sourceText = translationBox.dataset.sourceText || window.getSelection().toString().trim();
+
+      // Increment translation ID for new request
+      const newTranslationId = ++currentTranslationId;
+
+      // Fetch new translation with swapped languages
+      translateText(sourceText, currentToLang, currentFromLang, newTranslationId)
+        .then(translation => {
+          if (newTranslationId === currentTranslationId && translation) {
+            // Update the tooltip with new translation
+            if (translationTextEl) {
+              translationTextEl.textContent = translation;
+            }
+
+            // Save the new translation to history if successful
+            if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
+              saveTranslationToHistory(sourceText, translation, currentToLang, currentFromLang);
+            }
+          }
+        })
+        .catch(error => {
+          if (newTranslationId === currentTranslationId) {
+            console.error('Re-translation error:', error);
+            if (translationTextEl) {
+              translationTextEl.textContent = 'Translation failed';
+            }
+          }
+        });
+    });
+
+    // Create target language dropdown
+    const targetLangSelect = document.createElement('select');
+    targetLangSelect.className = 'target-lang-select';
+    targetLangSelect.title = 'Change target language';
+
+    // Populate target language options
+    languages.forEach(lang => {
+      const option = document.createElement('option');
+      option.value = lang.code;
+      option.textContent = lang.name;
+      targetLangSelect.appendChild(option);
+    });
+
+    // Function to handle language changes and re-translation
+    function handleLanguageChange(newLang, currentLang, otherLang, isSourceLang) {
+      // Only translate if there's an actual change AND languages are different
+      if (newLang !== currentLang && newLang !== otherLang) {
+        // Update stored language state
+        if (isSourceLang) {
+          translationBox.dataset.currentFromLang = newLang;
+          // Save the new source language preference
+          chrome.storage.sync.set({ fromLanguage: newLang }, function() {
+            if (chrome.runtime.lastError) {
+              console.error('Error saving fromLanguage preference:', chrome.runtime.lastError);
+            } else {
+              console.log('Successfully saved fromLanguage preference:', newLang);
+            }
+          });
+        } else {
+          translationBox.dataset.currentToLang = newLang;
+          // Save the new target language preference
+          chrome.storage.sync.set({ toLanguage: newLang }, function() {
+            if (chrome.runtime.lastError) {
+              console.error('Error saving toLanguage preference:', chrome.runtime.lastError);
+            } else {
+              console.log('Successfully saved toLanguage preference:', newLang);
+            }
+          });
+        }
+
+        // Show loading state
+        const translationTextEl = translationBox.querySelector('.translation-text');
+        if (translationTextEl) {
+          translationTextEl.textContent = 'Translating...';
+        }
+
+        // Get the source text from the stored data attribute (works for both text selection and context menu)
+        const sourceText = translationBox.dataset.sourceText || window.getSelection().toString().trim();
+
+        // Increment translation ID for new request
+        const newTranslationId = ++currentTranslationId;
+
+        // Fetch new translation
+        const sourceLang = isSourceLang ? newLang : otherLang;
+        const targetLang = isSourceLang ? otherLang : newLang;
+
+        translateText(sourceText, sourceLang, targetLang, newTranslationId)
+          .then(translation => {
+            if (newTranslationId === currentTranslationId && translation) {
+              // Update the tooltip with new translation
+              if (translationTextEl) {
+                translationTextEl.textContent = translation;
+              }
+
+              // Save the new translation to history if successful
+              if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
+                saveTranslationToHistory(sourceText, translation, sourceLang, targetLang);
+              }
+            }
+          })
+          .catch(error => {
+            if (newTranslationId === currentTranslationId) {
+              console.error('Re-translation error:', error);
+              if (translationTextEl) {
+                translationTextEl.textContent = 'Translation failed';
+              }
+            }
+          });
+      }
+    }
+
+    // Handle source language change
+    sourceLangSelect.addEventListener('change', function(e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      e.preventDefault();
+
+      const newSourceLang = e.target.value;
+      const currentFromLang = translationBox.dataset.currentFromLang;
+      const currentToLang = targetLangSelect.value;
+
+      handleLanguageChange(newSourceLang, currentFromLang, currentToLang, true);
+    });
+
+    // Handle target language change
+    targetLangSelect.addEventListener('change', function(e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      e.preventDefault();
+
+      const newTargetLang = e.target.value;
+      const currentToLang = translationBox.dataset.currentToLang;
+      const currentFromLang = sourceLangSelect.value;
+
+      handleLanguageChange(newTargetLang, currentToLang, currentFromLang, false);
+    });
+
+    // Prevent dropdown events from closing tooltip
+    [sourceLangSelect, targetLangSelect].forEach(select => {
+      const preventPropagation = function(e) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      };
+
+      const preventDefaultAndPropagation = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      };
+
+      select.addEventListener('mousedown', preventPropagation);
+      select.addEventListener('mouseup', preventPropagation);
+      select.addEventListener('click', preventPropagation);
+      select.addEventListener('focus', preventPropagation);
+      select.addEventListener('mouseenter', preventPropagation);
+      select.addEventListener('mouseover', preventPropagation);
+      select.addEventListener('mousemove', preventPropagation);
+      select.addEventListener('selectstart', preventDefaultAndPropagation);
+    });
+
+    // Assemble the language container
+    const langContainer = document.createElement('div');
+    langContainer.className = 'language-container';
+    langContainer.appendChild(sourceLangSelect);
+    langContainer.appendChild(arrowSeparator);
+    langContainer.appendChild(targetLangSelect);
+
+    translationBox.appendChild(langContainer);
+  });
+}
