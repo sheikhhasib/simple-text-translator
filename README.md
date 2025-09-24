@@ -22,7 +22,17 @@ A simple yet powerful Chrome Extension that allows you to translate selected tex
 
 ## Screenshots
 
-*(Add screenshots of the popup, the tooltip in action, and the options page here)*
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702471/stt-popup-1_iehchv.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702470/stt-popup-2_tv8nap.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702471/stt-translate-1_me3puv.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702471/stt-translate-2_sb07u4.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702470/stt-options-page_nslgj8.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702470/stt-history-details-1_y0fiws.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702470/stt-history-details-2_ocimkq.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702470/stt-history-page_rxlolu.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702470/stt-history-page-favorite_zwwpun.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702470/stt-history-details-1_y0fiws.png">   
+<img src="https://res.cloudinary.com/dd1qlozhf/image/upload/v1758702470/stt-history-details-2_ocimkq.png">   
 
 ## Installation
 
