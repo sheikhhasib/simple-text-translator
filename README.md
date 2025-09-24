@@ -6,19 +6,19 @@ A simple yet powerful Chrome Extension that allows you to translate selected tex
 
 ## Features
 
-*   **On-the-fly Translation:** Select any text on a webpage to see its translation in a subtle tooltip.
-*   **Context Menu Translation:** Right-click on any element to translate its text content.
-*   **Customizable Language List:** Choose your favorite languages to display in the popup for quick access.
-*   **Language Selection:** Choose your preferred source and target languages from your customized list.
-*   **Language Swap:** Easily swap between source and target languages with a dedicated button in both popup and tooltip.
-*   **Persistent Language Preferences:** Language preferences are saved and synchronized across devices.
-*   **Copy to Clipboard:** A "Copy" button is available in the translation tooltip to copy the translated text.
-*   **Enable/Disable:** Quickly enable or disable the translation functionality from the popup.
-*   **Automatic Saving:** Your language preferences and settings are saved automatically.
-*   **Translation History:** View and manage your translation history with search and filter capabilities.
-*   **Debounced Translation:** Prevents excessive API calls by debouncing translation requests.
-*   **MyMemory API:** Utilizes the MyMemory API for reliable translation.
-*   **Long Text Support:** Automatically splits and translates long text selections.
+*   🚀 **On-the-fly Translation:** Select any text on a webpage to see its translation in a subtle tooltip.
+*   🖱️ **Context Menu Translation:** Right-click on any element to translate its text content.
+*   🌍 **Customizable Language List:** Choose your favorite languages to display in the popup for quick access.
+*   📝 **Language Selection:** Choose your preferred source and target languages from your customized list.
+*   🔁 **Language Swap:** Easily swap between source and target languages with a dedicated button in both popup and tooltip.
+*   💾 **Persistent Language Preferences:** Language preferences are saved and synchronized across devices.
+*   📋 **Copy to Clipboard:** A "Copy" button is available in the translation tooltip to copy the translated text.
+*   ⚡ **Enable/Disable:** Quickly enable or disable the translation functionality from the popup.
+*   🔄 **Automatic Saving:** Your language preferences and settings are saved automatically.
+*   📚 **Translation History:** View and manage your translation history with search and filter capabilities.
+*   ⏱️ **Debounced Translation:** Prevents excessive API calls by debouncing translation requests.
+*   🔗 **MyMemory API:** Utilizes the MyMemory API for reliable translation.
+*   📖 **Long Text Support:** Automatically splits and translates long text selections.
 
 ## Screenshots
 
