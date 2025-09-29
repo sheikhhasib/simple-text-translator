@@ -34,9 +34,8 @@ A simple yet powerful Chrome Extension that allows you to translate selected tex
 ## Installation
 
 ### For Regular Users (Chrome Web Store)
-1. Visit the Chrome Web Store
-2. Search for "Simple Text Translator"
-3. Click "Add to Chrome"
+1. Visit the Chrome Web Store: [Simple Text Translator on Chrome Web Store](https://chromewebstore.google.com/detail/simple-text-translator/dgocomnpphononklboeemaikiedhdohp?hl=en)
+2. Click "Add to Chrome"
 
 ### For Developers (Local Installation)
 1.  **Download the repository:** Clone or download this repository to your local machine.
