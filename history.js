@@ -68,6 +68,15 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // Function to reload history from storage and refresh the display
+  function refreshHistory() {
+    chrome.storage.local.get(['translationHistory'], function(result) {
+      allHistory = result.translationHistory || [];
+      updateStatistics();
+      applyFilters();
+    });
+  }
+
   function populateLanguageFilter() {
     const languagePairs = new Set();
     allHistory.forEach(item => {
@@ -240,8 +249,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const fullDateTime = date.toLocaleString(); // Full date and time for hover
     const confidence = item.confidence ? Math.round(item.confidence * 100) : null;
 
+    // Check if this is a failed translation
+    const isFailedTranslation = item.translatedText.includes('failed') ||
+                               item.translatedText.includes('error') ||
+                               item.translatedText.includes('limit exceeded');
+
     return `
-      <div class="history-card ${item.isFavorite ? 'favorite' : ''}" data-id="${item.id}" data-clickable="true">
+      <div class="history-card ${item.isFavorite ? 'favorite' : ''} ${isFailedTranslation ? 'failed-translation' : ''}" data-id="${item.id}" data-clickable="true">
         <div class="card-header">
           <div class="language-pair">${getLanguageName(item.sourceLang)} → ${getLanguageName(item.targetLang)}</div>
           <div class="card-actions">
@@ -276,8 +290,10 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="card-footer">
           <span class="timestamp" title="${fullDateTime}">${timeAgo}</span>
           ${confidence ? `<span class="confidence">${confidence}% confidence</span>` : ''}
+          ${item.usedApi ? `<span class="used-api">API: ${item.usedApi}</span>` : ''}
         </div>
 
+        ${isFailedTranslation ? '<div class="failed-translation-warning">Translation failed</div>' : ''}
       </div>
     `;
   }
@@ -329,13 +345,10 @@ document.addEventListener('DOMContentLoaded', function() {
       const card = button.closest('.history-card');
       card.classList.toggle('favorite', item.isFavorite);
 
-      // Save to storage
-      chrome.storage.local.set({ translationHistory: allHistory }, function() {
-        updateStatistics();
-        // Re-apply filters if showing favorites only
-        if (favoritesFilter.value === 'favorites') {
-          applyFilters();
-        }
+      // Save to storage with proper history limiting
+      saveHistory(allHistory, function(limitedHistory) {
+        allHistory = limitedHistory;
+        refreshHistory(); // Ensure the display is updated with the latest data
       });
     }
   }
@@ -351,19 +364,17 @@ document.addEventListener('DOMContentLoaded', function() {
         button.style.backgroundColor = '';
       }, 1000);
     }).catch(err => {
-      console.error('Failed to copy text: ', err);
+      // Failed to copy text
       alert('Failed to copy to clipboard');
     });
   }
 
-
-
   function deleteItem(itemId) {
     if (confirm('Are you sure you want to delete this translation?')) {
       allHistory = allHistory.filter(h => h.id !== itemId);
-      chrome.storage.local.set({ translationHistory: allHistory }, function() {
-        updateStatistics();
-        applyFilters();
+      saveHistory(allHistory, function(limitedHistory) {
+        allHistory = limitedHistory;
+        refreshHistory(); // Ensure the display is updated with the latest data
       });
     }
   }
@@ -425,6 +436,15 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
           </div>
 
+          <!-- API Selection Section -->
+          <div class="api-selection-section">
+            <label for="api-selection-detail">Translation API:</label>
+            <select id="api-selection-detail" class="api-select">
+              <option value="mymemory">MyMemory API (Online)</option>
+              <option value="chrome">Chrome Built-in Translator (Offline)</option>
+            </select>
+          </div>
+
           <div class="translation-section">
             <div class="text-section">
               <label>Original Text:</label>
@@ -457,6 +477,10 @@ document.addEventListener('DOMContentLoaded', function() {
               <span class="info-label">Confidence:</span>
               <span id="detail-confidence"></span>
             </div>
+            <div class="info-item" id="api-info" style="display: none;">
+              <span class="info-label">Translated with:</span>
+              <span id="detail-api"></span>
+            </div>
           </div>
 
           <div class="modal-actions">
@@ -484,6 +508,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Populate language selectors
     populateLanguageSelectors(modal, item);
 
+    // Populate API selection
+    populateApiSelection(modal, item);
+
     // Populate content
     document.getElementById('source-content').textContent = item.sourceText;
     document.getElementById('target-content').textContent = item.translatedText;
@@ -499,6 +526,15 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('confidence-info').style.display = 'none';
     }
 
+    // Display API information if available
+    if (item.usedApi) {
+      document.getElementById('api-info').style.display = 'block';
+      const apiName = item.usedApi === 'chrome' ? 'Chrome Built-in Translator' : 'MyMemory API';
+      document.getElementById('detail-api').textContent = apiName;
+    } else {
+      document.getElementById('api-info').style.display = 'none';
+    }
+
     // Update favorite button
     const favoriteBtn = document.getElementById('detail-favorite');
     favoriteBtn.textContent = item.isFavorite ? 'Remove from Favorites' : 'Add to Favorites';
@@ -506,6 +542,59 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add event listeners
     setupModalEventListeners(modal);
+
+    // Check if this is a failed translation and show warning
+    const isFailedTranslation = item.translatedText.includes('failed') ||
+                               item.translatedText.includes('error') ||
+                               item.translatedText.includes('limit exceeded');
+
+    if (isFailedTranslation) {
+      const targetContent = document.getElementById('target-content');
+      targetContent.classList.add('failed-translation-text');
+    } else {
+      const targetContent = document.getElementById('target-content');
+      targetContent.classList.remove('failed-translation-text');
+    }
+  }
+
+  function populateApiSelection(modal, item) {
+    // Get selected API from storage
+    chrome.storage.sync.get(['selectedApi'], function(result) {
+      const selectedApi = result.selectedApi || 'mymemory';
+      const apiSelect = document.getElementById('api-selection-detail');
+
+      if (apiSelect) {
+        apiSelect.value = selectedApi;
+
+        // Check Chrome API availability
+        if (selectedApi === 'chrome') {
+          checkChromeApiAvailabilityForModal(apiSelect);
+        }
+      }
+    });
+  }
+
+  function checkChromeApiAvailabilityForModal(apiSelect) {
+    const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+    const chromeVersionMatch = navigator.userAgent.match(/Chrome\/(\d+)/);
+    const chromeVersion = isChrome && chromeVersionMatch ? parseInt(chromeVersionMatch[1]) : 0;
+
+    const isTranslatorAvailable = 'Translator' in self;
+    const isLanguageDetectorAvailable = 'LanguageDetector' in self;
+
+    const isChromeApiAvailable = isChrome && chromeVersion >= 138 && isTranslatorAvailable && isLanguageDetectorAvailable;
+
+    if (!isChromeApiAvailable && apiSelect) {
+      // Show warning by changing option text
+      const chromeOption = apiSelect.querySelector('option[value="chrome"]');
+      if (chromeOption) {
+        chromeOption.textContent = 'Chrome Built-in Translator (Not Available)';
+        chromeOption.disabled = true;
+      }
+
+      // Switch back to MyMemory API
+      apiSelect.value = 'mymemory';
+    }
   }
 
   function populateLanguageSelectors(modal, item) {
@@ -570,6 +659,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Remove existing listeners to avoid duplicates
     const fromSelect = document.getElementById('from-lang-detail');
     const toSelect = document.getElementById('to-lang-detail');
+    const apiSelect = document.getElementById('api-selection-detail');
     const swapBtn = document.getElementById('swap-languages-detail');
     const copyBtn = document.getElementById('detail-copy');
     const favoriteBtn = document.getElementById('detail-favorite');
@@ -577,12 +667,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Clone elements to remove all event listeners
     const newFromSelect = fromSelect.cloneNode(true);
     const newToSelect = toSelect.cloneNode(true);
+    const newApiSelect = apiSelect ? apiSelect.cloneNode(true) : null;
     const newSwapBtn = swapBtn.cloneNode(true);
     const newCopyBtn = copyBtn.cloneNode(true);
     const newFavoriteBtn = favoriteBtn.cloneNode(true);
 
     fromSelect.parentNode.replaceChild(newFromSelect, fromSelect);
     toSelect.parentNode.replaceChild(newToSelect, toSelect);
+    if (apiSelect && newApiSelect) {
+      apiSelect.parentNode.replaceChild(newApiSelect, apiSelect);
+    }
     swapBtn.parentNode.replaceChild(newSwapBtn, swapBtn);
     copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
     favoriteBtn.parentNode.replaceChild(newFavoriteBtn, favoriteBtn);
@@ -590,6 +684,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add new event listeners
     newFromSelect.addEventListener('change', () => handleLanguageChange(modal));
     newToSelect.addEventListener('change', () => handleLanguageChange(modal));
+
+    if (newApiSelect) {
+      newApiSelect.addEventListener('change', () => {
+        // Save the API preference
+        chrome.storage.sync.set({ selectedApi: newApiSelect.value });
+        // Trigger translation with the new API
+        handleLanguageChange(modal);
+      });
+    }
 
     newSwapBtn.addEventListener('click', () => {
       const fromValue = newFromSelect.value;
@@ -690,20 +793,20 @@ document.addEventListener('DOMContentLoaded', function() {
   async function translateLongText(text, fromLang, toLang) {
     // Split text intelligently based on sentence boundaries
     const chunks = splitTextIntelligently(text);
-    console.log(`Split text into ${chunks.length} chunks:`, chunks.map(c => c.length));
+    // Split text into chunks
 
     const translatedChunks = [];
 
     // Translate each chunk sequentially
     for (let i = 0; i < chunks.length; i++) {
-      console.log(`Translating chunk ${i + 1}/${chunks.length}: "${chunks[i].substring(0, 50)}..."`);
+      // Translating chunk
 
       try {
         const chunkTranslation = await translateSingleChunk(chunks[i], fromLang, toLang);
 
         // Check if chunk translation failed
         if (!chunkTranslation || chunkTranslation.includes('failed') || chunkTranslation.includes('error') || chunkTranslation.includes('limit exceeded')) {
-          console.error(`Chunk ${i + 1} translation failed:`, chunkTranslation);
+          // Chunk translation failed
           return chunkTranslation; // Return the error message
         }
 
@@ -714,14 +817,14 @@ document.addEventListener('DOMContentLoaded', function() {
           await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
         }
       } catch (error) {
-        console.error(`Error translating chunk ${i + 1}:`, error);
+        // Error translating chunk
         return `Translation failed at segment ${i + 1}: ${error.message}`;
       }
     }
 
     // Stitch the translated chunks back together
     const finalTranslation = stitchTranslatedChunks(translatedChunks, chunks);
-    console.log('Final stitched translation:', finalTranslation);
+    // Final stitched translation
 
     return finalTranslation;
   }
@@ -730,7 +833,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const langpair = `${fromLang}|${toLang}`;
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
 
-    console.log(`Translating chunk: "${text.substring(0, 50)}..." from ${fromLang} to ${toLang}`);
+    // Translating chunk
 
     try {
       const response = await fetch(url);
@@ -740,7 +843,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       const data = await response.json();
-      console.log('Translation API response:', data);
+      // Translation API response
 
       if (data.responseData && data.responseData.translatedText) {
         const translatedText = data.responseData.translatedText;
@@ -759,7 +862,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return `Translation error: ${data.responseDetails || 'Unknown error'}`;
       }
     } catch (error) {
-      console.error("Translation API call failed:", error);
+      // Translation API call failed
       return `Translation service error: ${error.message}`;
     }
   }
@@ -793,6 +896,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const item = modal.currentItem;
     const fromLang = document.getElementById('from-lang-detail').value;
     const toLang = document.getElementById('to-lang-detail').value;
+    const selectedApi = document.getElementById('api-selection-detail') ? document.getElementById('api-selection-detail').value : 'mymemory';
 
     // Prevent translation if languages are the same
     if (fromLang === toLang) {
@@ -811,8 +915,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Use intelligent text splitting for texts over 500 characters
     if (sourceText.length > 500) {
-      console.log(`Text is ${sourceText.length} characters, using intelligent splitting`);
-      translateLongText(sourceText, fromLang, toLang)
+      // For long texts, we'll use the appropriate API
+      translateLongTextWithApi(sourceText, fromLang, toLang, selectedApi)
         .then(translation => {
           if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
             // Update display
@@ -828,15 +932,16 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('confidence-info').style.display = 'none';
 
             // Save updated item to storage
-            chrome.storage.local.set({ translationHistory: allHistory }, function() {
-              applyFilters(); // Refresh the main view
+            saveHistory(allHistory, function(limitedHistory) {
+              allHistory = limitedHistory;
+              refreshHistory(); // Ensure the display is updated with the latest data
             });
           } else {
             targetEl.textContent = translation || 'Translation failed';
           }
         })
         .catch(error => {
-          console.error('Long text translation error:', error);
+          // Long text translation error
           targetEl.textContent = 'Translation failed';
         })
         .finally(() => {
@@ -844,14 +949,11 @@ document.addEventListener('DOMContentLoaded', function() {
           targetEl.style.opacity = '1';
         });
     } else {
-      // Use single request for texts under 500 characters
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(sourceText)}&langpair=${fromLang}|${toLang}`;
-
-      fetch(url)
-        .then(response => response.json())
-        .then(data => {
-          if (data && data.responseData && data.responseData.translatedText) {
-            const newTranslation = data.responseData.translatedText;
+      // For short texts, use the appropriate API
+      translateTextWithSelectedApi(sourceText, fromLang, toLang, selectedApi)
+        .then(result => {
+          if (result && result.translation && !result.translation.includes('failed') && !result.translation.includes('error') && !result.translation.includes('limit exceeded')) {
+            const newTranslation = result.translation;
 
             // Update display
             targetEl.textContent = newTranslation;
@@ -860,7 +962,7 @@ document.addEventListener('DOMContentLoaded', function() {
             item.sourceLang = fromLang;
             item.targetLang = toLang;
             item.translatedText = newTranslation;
-            item.confidence = data.responseData.match || null;
+            item.confidence = result.confidence || null;
 
             // Update confidence display
             if (item.confidence) {
@@ -871,15 +973,16 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Save updated item to storage
-            chrome.storage.local.set({ translationHistory: allHistory }, function() {
-              applyFilters(); // Refresh the main view
+            saveHistory(allHistory, function(limitedHistory) {
+              allHistory = limitedHistory;
+              refreshHistory(); // Ensure the display is updated with the latest data
             });
           } else {
-            targetEl.textContent = 'Translation failed';
+            targetEl.textContent = result.translation || 'Translation failed';
           }
         })
         .catch(error => {
-          console.error('Translation error:', error);
+          // Translation error
           targetEl.textContent = 'Translation failed';
         })
         .finally(() => {
@@ -887,6 +990,136 @@ document.addEventListener('DOMContentLoaded', function() {
           targetEl.style.opacity = '1';
         });
     }
+  }
+
+  async function translateTextWithSelectedApi(text, fromLang, toLang, selectedApi) {
+    if (selectedApi === 'chrome') {
+      // Check if Chrome API is available
+      const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+      const chromeVersionMatch = navigator.userAgent.match(/Chrome\/(\d+)/);
+      const chromeVersion = isChrome && chromeVersionMatch ? parseInt(chromeVersionMatch[1]) : 0;
+      const isTranslatorAvailable = 'Translator' in self;
+
+      if (isChrome && chromeVersion >= 138 && isTranslatorAvailable) {
+        try {
+          // Use Chrome's built-in Translator API
+          const translation = await translateTextWithChrome(text, fromLang, toLang);
+          return { translation, confidence: null };
+        } catch (error) {
+          // Fall back to MyMemory API if Chrome translation fails
+          return await translateWithMyMemory(text, fromLang, toLang);
+        }
+      } else {
+        // Fall back to MyMemory API if Chrome API is not available
+        return await translateWithMyMemory(text, fromLang, toLang);
+      }
+    } else {
+      // Use MyMemory API
+      return await translateWithMyMemory(text, fromLang, toLang);
+    }
+  }
+
+  async function translateWithMyMemory(text, fromLang, toLang) {
+    const langpair = `${fromLang}|${toLang}`;
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
+
+    try {
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.responseData && data.responseData.translatedText) {
+        const translatedText = data.responseData.translatedText;
+
+        // Check if translation is actually different from source
+        if (translatedText.toLowerCase().trim() === text.toLowerCase().trim()) {
+          return { translation: `No translation needed (same text in both languages).`, confidence: null };
+        }
+
+        return { translation: translatedText, confidence: data.responseData.match || null };
+      } else if (data.responseStatus === 403) {
+        return { translation: "MyMemory API daily limit exceeded. Please try again tomorrow.", confidence: null };
+      } else if (data.responseStatus === 404) {
+        return { translation: "Translation not available for this language pair.", confidence: null };
+      } else {
+        return { translation: `Translation error: ${data.responseDetails || 'Unknown error'}`, confidence: null };
+      }
+    } catch (error) {
+      return { translation: `Translation service error: ${error.message}`, confidence: null };
+    }
+  }
+
+  async function translateTextWithChrome(text, fromLang, toLang) {
+    // Normalize language codes to match what Chrome API expects
+    const normalizeLanguageCode = (lang) => {
+      const chromeLanguageMap = {
+        'zh-CN': 'zh',
+        'zh-TW': 'zh-Hant',
+        'pt-BR': 'pt',
+        'pt-PT': 'pt'
+      };
+      return chromeLanguageMap[lang] || lang;
+    };
+
+    const normalizedFromLang = normalizeLanguageCode(fromLang);
+    const normalizedToLang = normalizeLanguageCode(toLang);
+
+    // Create translator instance
+    const translator = await Translator.create({
+      sourceLanguage: normalizedFromLang,
+      targetLanguage: normalizedToLang,
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => {
+          // Progress tracking can be added here if needed
+        });
+      }
+    });
+
+    // Translate the text
+    const translation = await translator.translate(text);
+
+    // Clean up the translator instance
+    if (translator.destroy) {
+      translator.destroy();
+    }
+
+    return translation;
+  }
+
+  async function translateLongTextWithApi(text, fromLang, toLang, selectedApi) {
+    // Split text intelligently based on sentence boundaries
+    const chunks = splitTextIntelligently(text);
+    const translatedChunks = [];
+
+    // Translate each chunk sequentially
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        const result = await translateTextWithSelectedApi(chunks[i], fromLang, toLang, selectedApi);
+        const chunkTranslation = result.translation;
+
+        // Check if chunk translation failed
+        if (!chunkTranslation || chunkTranslation.includes('failed') || chunkTranslation.includes('error') || chunkTranslation.includes('limit exceeded')) {
+          return chunkTranslation; // Return the error message
+        }
+
+        translatedChunks.push(chunkTranslation);
+
+        // Add a small delay between requests to be respectful to the API
+        if (i < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
+        }
+      } catch (error) {
+        return `Translation failed at segment ${i + 1}: ${error.message}`;
+      }
+    }
+
+    // Stitch the translated chunks back together
+    const finalTranslation = stitchTranslatedChunks(translatedChunks, chunks);
+    return finalTranslation;
   }
 
   function closeDetailsModal() {
@@ -937,6 +1170,36 @@ document.addEventListener('DOMContentLoaded', function() {
         populateLanguageFilter();
       });
     }
+  }
+
+  // Add this constant at the top of the file, after the existing variable declarations
+  const HISTORY_LIMIT = 500;
+
+  // Helper function to limit history to HISTORY_LIMIT items
+  function limitHistory(history) {
+    if (history.length > HISTORY_LIMIT) {
+      return history.slice(0, HISTORY_LIMIT);
+    }
+    return history;
+  }
+
+  // Helper function to save history with proper limiting
+  function saveHistory(newHistory, callback) {
+    const limitedHistory = limitHistory(newHistory);
+    chrome.storage.local.set({ translationHistory: limitedHistory }, function() {
+      if (chrome.runtime.lastError) {
+        // Error saving history to storage
+      }
+      if (callback) callback(limitedHistory);
+    });
+  }
+
+  // Helper function to reload history from storage
+  function reloadHistory(callback) {
+    chrome.storage.local.get(['translationHistory'], function(result) {
+      allHistory = result.translationHistory || [];
+      if (callback) callback();
+    });
   }
 
   function exportHistory() {
@@ -1013,7 +1276,7 @@ document.addEventListener('DOMContentLoaded', function() {
         processImportedData(importedData);
 
       } catch (error) {
-        console.error('Import error:', error);
+        // Import error
         alert('Error reading file. Please check that it\'s a valid JSON file.');
       }
     };
@@ -1080,12 +1343,12 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
       // Save merged history
-      chrome.storage.local.set({ translationHistory: currentHistory }, function() {
+      saveHistory(currentHistory, function(limitedHistory) {
         if (chrome.runtime.lastError) {
           alert('Error saving imported data: ' + chrome.runtime.lastError.message);
         } else {
           // Refresh the display
-          allHistory = currentHistory;
+          allHistory = limitedHistory;
           populateLanguageFilter();
           updateStatistics();
           applyFilters();

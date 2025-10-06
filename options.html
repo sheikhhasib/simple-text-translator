@@ -10,6 +10,23 @@
       <h1>Options</h1>
     </header>
     <main>
+      <!-- API Selection Section -->
+      <div class="api-selection-section">
+        <h2>Translation API</h2>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" id="api-mymemory" name="translation-api" value="mymemory" checked>
+            <label for="api-mymemory">MyMemory API (Online)</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" id="api-chrome" name="translation-api" value="chrome">
+            <label for="api-chrome">Chrome Built-in Translator (Offline)</label>
+          </div>
+        </div>
+        <p class="api-description" id="api-description">Current selection: MyMemory API</p>
+        <p class="api-warning" id="api-warning" style="display: none; color: #ff6b6b; font-size: 12px; margin-top: 5px;"></p>
+      </div>
+
       <div class="search-container">
         <input type="text" id="search-input" placeholder=" ">
         <label for="search-input">Search languages...</label>

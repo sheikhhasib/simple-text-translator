@@ -7,9 +7,9 @@ chrome.runtime.onInstalled.addListener(() => {
   }, () => {
     // Error handling for context menu creation
     if (chrome.runtime.lastError) {
-      console.error('Error creating context menu:', chrome.runtime.lastError);
+      // Silently handle error
     } else {
-      console.log('Context menu created successfully');
+      // Success
     }
   });
 });
@@ -24,7 +24,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }, (response) => {
       // Error handling for message sending
       if (chrome.runtime.lastError) {
-        console.error('Error sending message to content script:', chrome.runtime.lastError);
+        // Silently handle error
       }
     });
   }
@@ -42,7 +42,6 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     try {
       chrome.storage.sync.get(['fromLanguage', 'toLanguage', 'isEnabled'], function(items) {
         if (chrome.runtime.lastError) {
-          console.error('Background script storage error:', chrome.runtime.lastError);
           // Send cached values if storage fails
           sendResponse(cachedPreferences);
         } else {
@@ -60,7 +59,6 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         }
       });
     } catch (error) {
-      console.error('Background script error:', error);
       // Send cached values if there's an exception
       sendResponse(cachedPreferences);
     }

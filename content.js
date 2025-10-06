@@ -2,6 +2,154 @@ let tooltip;
 let debounceTimeout;
 let currentTranslationId = 0; // Track translation requests to prevent race conditions
 let isTooltipVisible = false;
+let selectedApi = 'mymemory'; // Default to MyMemory API
+let chromeTranslator = null;
+let chromeLanguageDetector = null;
+
+// Add this constant at the top of the file, after the existing variable declarations
+const HISTORY_LIMIT = 500;
+
+// Function to initialize Chrome's Translator API
+async function initializeChromeTranslator(sourceLang, targetLang) {
+  try {
+    // Check if Translator API is available
+    if (!('Translator' in self)) {
+      return false;
+    }
+
+    // Create translator instance (no language pair checking)
+    chromeTranslator = await Translator.create({
+      sourceLanguage: sourceLang,
+      targetLanguage: targetLang,
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => {
+          // Progress tracking can be added here if needed
+        });
+      }
+    });
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Function to initialize Chrome's Language Detector API
+async function initializeChromeLanguageDetector() {
+  try {
+    // Check if LanguageDetector API is available
+    if (!('LanguageDetector' in self)) {
+      return false;
+    }
+
+    // Create language detector instance
+    chromeLanguageDetector = await LanguageDetector.create({
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => {
+          // Progress tracking can be added here if needed
+        });
+      }
+    });
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Function to detect language using Chrome's Language Detector API
+async function detectLanguageWithChrome(text) {
+  try {
+    if (!chromeLanguageDetector) {
+      const initialized = await initializeChromeLanguageDetector();
+      if (!initialized) {
+        throw new Error('Chrome Language Detector API is not available');
+      }
+    }
+
+    const results = await chromeLanguageDetector.detect(text);
+    if (results && results.length > 0) {
+      return results[0].detectedLanguage; // Return the most likely language
+    }
+    return null;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Function to translate text using Chrome's Translator API
+async function translateTextWithChrome(text, fromLang, toLang, requestId) {
+  try {
+    // Check if this request is still valid
+    if (requestId && requestId !== currentTranslationId) {
+      return null; // Request cancelled
+    }
+
+    // Attempting Chrome translation
+
+    // Check if Translator API is available
+    if (!('Translator' in self)) {
+      // Chrome Translator API is not available in this browser
+      throw new Error('Chrome Translator API is not available in this browser');
+    }
+
+    // Normalize language codes to match what Chrome API expects
+    // Chrome API might expect different codes than MyMemory
+    const normalizeLanguageCode = (lang) => {
+      // Common mappings for Chrome API
+      const chromeLanguageMap = {
+        'zh-CN': 'zh',
+        'zh-TW': 'zh-Hant',
+        'pt-BR': 'pt',
+        'pt-PT': 'pt'
+      };
+      return chromeLanguageMap[lang] || lang;
+    };
+
+    const normalizedFromLang = normalizeLanguageCode(fromLang);
+    const normalizedToLang = normalizeLanguageCode(toLang);
+
+    // Normalized languages for Chrome API
+
+    // Create translator instance with better error handling
+    let translator;
+    try {
+      translator = await Translator.create({
+        sourceLanguage: normalizedFromLang,
+        targetLanguage: normalizedToLang,
+        monitor(m) {
+          m.addEventListener('downloadprogress', (e) => {
+            // Progress tracking can be added here if needed
+            // Translation download progress
+          });
+        }
+      });
+    } catch (initError) {
+      // Failed to initialize Chrome Translator
+      throw new Error(`Failed to initialize Chrome Translator: ${initError.message}`);
+    }
+
+    // Translate the text
+    let translation;
+    try {
+      translation = await translator.translate(text);
+      // Chrome translation result
+    } catch (translateError) {
+      // Chrome translation failed
+      throw new Error(`Chrome translation failed: ${translateError.message}`);
+    } finally {
+      // Clean up the translator instance
+      if (translator && typeof translator.destroy === 'function') {
+        translator.destroy();
+      }
+    }
+
+    return translation;
+  } catch (error) {
+    // Chrome translation error
+    throw error;
+  }
+}
 
 document.addEventListener('mouseup', function(e) {
   const selectedText = window.getSelection().toString().trim();
@@ -22,13 +170,11 @@ document.addEventListener('mouseup', function(e) {
 
       // Check for runtime errors
       if (chrome.runtime.lastError) {
-        console.error('Error getting translation preferences:', chrome.runtime.lastError);
         return;
       }
 
       // Validate response
       if (!items || typeof items !== 'object') {
-        console.warn('Invalid preferences response, using defaults');
         items = {};
       }
 
@@ -54,13 +200,19 @@ document.addEventListener('mouseup', function(e) {
 
                 // Save successful translation to history
                 if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                  saveTranslationToHistory(selectedText, translation, fromLang, toLang);
+                  // Attempting to save tooltip translation to history
+                  // Get the selected API to store with the history item
+                  chrome.storage.sync.get(['selectedApi'], function(items) {
+                    const usedApi = items.selectedApi || 'mymemory';
+                    saveTranslationToHistory(selectedText, translation, fromLang, toLang, null, usedApi);
+                  });
+                } else {
+                  // Not saving tooltip translation to history due to translation issues
                 }
               }
             })
             .catch(error => {
               if (translationId === currentTranslationId) {
-                console.error("Translation error:", error);
                 showTooltip(e.clientX, e.clientY, "Translation failed", selectedText, fromLang, toLang);
               }
             });
@@ -72,6 +224,8 @@ document.addEventListener('mouseup', function(e) {
   } else {
     // Hide tooltip if no text is selected
     hideTooltip();
+    // Also increment translation ID to cancel any pending requests
+    currentTranslationId++;
   }
 });
 
@@ -252,6 +406,11 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
         margin-bottom: 12px;
         word-wrap: break-word;
         color: #ffffff;
+        font-weight: 500;
+      }
+
+      .translation-text.failed-translation {
+        color: #ff6b6b;
         font-weight: 500;
       }
 
@@ -568,9 +727,9 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
           toLanguage: currentFromLang
         }, function() {
           if (chrome.runtime.lastError) {
-            console.error('Error saving swapped language preferences:', chrome.runtime.lastError);
+            // Error saving swapped language preferences
           } else {
-            console.log('Successfully saved swapped language preferences');
+            // Successfully saved swapped language preferences
           }
         });
 
@@ -578,6 +737,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
         const translationTextEl = tooltipElement.querySelector('.translation-text');
         if (translationTextEl) {
           translationTextEl.textContent = 'Translating...';
+          translationTextEl.classList.remove('failed-translation');
         }
 
         // Get the source text from the stored data attribute (works for both text selection and context menu)
@@ -593,19 +753,30 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
               // Update the tooltip with new translation
               if (translationTextEl) {
                 translationTextEl.textContent = translation;
+                // Add failed translation class if needed
+                if (translation.includes('failed') || translation.includes('error') || translation.includes('limit exceeded')) {
+                  translationTextEl.classList.add('failed-translation');
+                } else {
+                  translationTextEl.classList.remove('failed-translation');
+                }
               }
 
               // Save the new translation to history if successful
               if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                saveTranslationToHistory(sourceText, translation, currentToLang, currentFromLang);
+                // Get the selected API to store with the history item
+              chrome.storage.sync.get(['selectedApi'], function(items) {
+                const usedApi = items.selectedApi || 'mymemory';
+                saveTranslationToHistory(sourceText, translation, currentToLang, currentFromLang, null, usedApi);
+              });
               }
             }
           })
           .catch(error => {
             if (newTranslationId === currentTranslationId) {
-              console.error('Re-translation error:', error);
+              // Re-translation error
               if (translationTextEl) {
                 translationTextEl.textContent = 'Translation failed';
+                translationTextEl.classList.add('failed-translation');
               }
             }
           });
@@ -635,9 +806,9 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
             // Save the new source language preference
             chrome.storage.sync.set({ fromLanguage: newLang }, function() {
               if (chrome.runtime.lastError) {
-                console.error('Error saving fromLanguage preference:', chrome.runtime.lastError);
+                // Error saving fromLanguage preference
               } else {
-                console.log('Successfully saved fromLanguage preference:', newLang);
+                // Successfully saved fromLanguage preference
               }
             });
           } else {
@@ -645,9 +816,9 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
             // Save the new target language preference
             chrome.storage.sync.set({ toLanguage: newLang }, function() {
               if (chrome.runtime.lastError) {
-                console.error('Error saving toLanguage preference:', chrome.runtime.lastError);
+                // Error saving toLanguage preference
               } else {
-                console.log('Successfully saved toLanguage preference:', newLang);
+                // Successfully saved toLanguage preference
               }
             });
           }
@@ -656,6 +827,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
           const translationTextEl = tooltipElement.querySelector('.translation-text');
           if (translationTextEl) {
             translationTextEl.textContent = 'Translating...';
+            translationTextEl.classList.remove('failed-translation');
           }
 
           // Get the source text from the stored data attribute (works for both text selection and context menu)
@@ -674,19 +846,30 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
                 // Update the tooltip with new translation
                 if (translationTextEl) {
                   translationTextEl.textContent = translation;
+                  // Add failed translation class if needed
+                  if (translation.includes('failed') || translation.includes('error') || translation.includes('limit exceeded')) {
+                    translationTextEl.classList.add('failed-translation');
+                  } else {
+                    translationTextEl.classList.remove('failed-translation');
+                  }
                 }
 
                 // Save the new translation to history if successful
                 if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                  saveTranslationToHistory(sourceText, translation, sourceLang, targetLang);
+                  // Get the selected API to store with the history item
+                chrome.storage.sync.get(['selectedApi'], function(items) {
+                  const usedApi = items.selectedApi || 'mymemory';
+                  saveTranslationToHistory(sourceText, translation, sourceLang, targetLang, null, usedApi);
+                });
                 }
               }
             })
             .catch(error => {
               if (newTranslationId === currentTranslationId) {
-                console.error('Re-translation error:', error);
+                // Re-translation error
                 if (translationTextEl) {
                   translationTextEl.textContent = 'Translation failed';
+                  translationTextEl.classList.add('failed-translation');
                 }
               }
             });
@@ -754,6 +937,10 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
   // Add translation text
   const textContainer = document.createElement('div');
   textContainer.className = 'translation-text';
+  // Add failed translation class if needed
+  if (text.includes('failed') || text.includes('error') || text.includes('limit exceeded')) {
+    textContainer.classList.add('failed-translation');
+  }
   textContainer.textContent = text;
   tooltipContent.appendChild(textContainer);
 
@@ -784,7 +971,7 @@ function showTooltip(x, y, text, sourceText, fromLang, toLang, fromContextMenu =
           copyButton.classList.remove('success');
         }, 1500);
       }).catch(err => {
-        console.error('Failed to copy text: ', err);
+        // Failed to copy text
         copyButton.innerHTML = 'Failed';
         copyButton.classList.add('error');
         setTimeout(() => {
@@ -903,7 +1090,7 @@ async function translateText(text, fromLang, toLang, requestId) {
 
   // Check if text is longer than 500 characters
   if (text.length > 500) {
-    console.log(`Long text detected (${text.length} chars), splitting into chunks...`);
+    // Long text detected, splitting into chunks...
     return await translateLongText(text, normalizedFromLang, normalizedToLang, requestId);
   }
 
@@ -915,7 +1102,7 @@ async function translateText(text, fromLang, toLang, requestId) {
 async function translateLongText(text, fromLang, toLang, requestId) {
   // Split text intelligently based on sentence boundaries
   const chunks = splitTextIntelligently(text);
-  console.log(`Split text into ${chunks.length} chunks:`, chunks.map(c => c.length));
+  // Split text into chunks
 
   const translatedChunks = [];
 
@@ -926,14 +1113,14 @@ async function translateLongText(text, fromLang, toLang, requestId) {
       return null; // Request cancelled
     }
 
-    console.log(`Translating chunk ${i + 1}/${chunks.length}: "${chunks[i].substring(0, 50)}..."`);
+    // Translating chunk
 
     try {
       const chunkTranslation = await translateSingleChunk(chunks[i], fromLang, toLang, requestId);
 
       // Check if chunk translation failed
       if (!chunkTranslation || chunkTranslation.includes('failed') || chunkTranslation.includes('error') || chunkTranslation.includes('limit exceeded')) {
-        console.error(`Chunk ${i + 1} translation failed:`, chunkTranslation);
+        // Chunk translation failed
         return chunkTranslation; // Return the error message
       }
 
@@ -944,14 +1131,14 @@ async function translateLongText(text, fromLang, toLang, requestId) {
         await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
       }
     } catch (error) {
-      console.error(`Error translating chunk ${i + 1}:`, error);
+      // Error translating chunk
       return `Translation failed at segment ${i + 1}: ${error.message}`;
     }
   }
 
   // Stitch the translated chunks back together
   const finalTranslation = stitchTranslatedChunks(translatedChunks, chunks);
-  console.log('Final stitched translation:', finalTranslation);
+  // Final stitched translation
 
   return finalTranslation;
 }
@@ -1051,50 +1238,95 @@ async function translateSingleChunk(text, fromLang, toLang, requestId) {
     return null; // Request cancelled
   }
 
-  const langpair = `${fromLang}|${toLang}`;
-  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
+  // Translating single chunk
 
-  console.log(`Translating chunk: "${text.substring(0, 50)}..." from ${fromLang} to ${toLang}`);
+  // Get the selected API from storage
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['selectedApi'], async function(items) {
+      const selectedApi = items.selectedApi || 'mymemory';
+      // Selected API
 
-  try {
-    const response = await fetch(url);
-
-    // Check again if request is still valid
-    if (requestId && requestId !== currentTranslationId) {
-      return null;
-    }
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('Translation API response:', data);
-
-    if (data.responseData && data.responseData.translatedText) {
-      const translatedText = data.responseData.translatedText;
-
-      // Check if translation is actually different from source
-      if (translatedText.toLowerCase().trim() === text.toLowerCase().trim()) {
-        return `No translation needed (same text in both languages).`;
+      // Use Chrome's Translator API if selected and available
+      if (selectedApi === 'chrome') {
+        try {
+          const translation = await translateTextWithChrome(text, fromLang, toLang, requestId);
+          if (translation) {
+            // Chrome translation successful
+            resolve(translation);
+            return;
+          }
+          // Fall through to MyMemory API if Chrome translation returns no result
+          // Chrome translation returned no result, falling back to MyMemory API
+        } catch (error) {
+          // Chrome translation failed, falling back to MyMemory API
+          // Fall through to MyMemory API
+        }
       }
 
-      return translatedText;
-    } else if (data.responseStatus === 403) {
-      return "MyMemory API daily limit exceeded. Please try again tomorrow.";
-    } else if (data.responseStatus === 404) {
-      return "Translation not available for this language pair.";
-    } else {
-      return `Translation error: ${data.responseDetails || 'Unknown error'}`;
-    }
-  } catch (error) {
-    console.error("Translation API call failed:", error);
-    return `Translation service error: ${error.message}`;
-  }
+      // Use MyMemory API (default or fallback)
+      const langpair = `${fromLang}|${toLang}`;
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
+
+      // MyMemory API request
+
+      try {
+        const response = await fetch(url);
+
+        // Check again if request is still valid
+        if (requestId && requestId !== currentTranslationId) {
+          resolve(null);
+          return;
+        }
+
+        // MyMemory API response status
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        // MyMemory API response data
+
+        if (data.responseData && data.responseData.translatedText) {
+          const translatedText = data.responseData.translatedText;
+
+          // Check if translation is actually different from source
+          if (translatedText.toLowerCase().trim() === text.toLowerCase().trim()) {
+            resolve(`No translation needed (same text in both languages).`);
+            return;
+          }
+
+          resolve(translatedText);
+        } else if (data.responseStatus === 403) {
+          resolve("MyMemory API daily limit exceeded. Please try again tomorrow.");
+        } else if (data.responseStatus === 404) {
+          resolve("Translation not available for this language pair.");
+        } else if (data.responseStatus === 200 && data.matches && data.matches.length > 0) {
+          // Try to get translation from matches if available
+          const bestMatch = data.matches.find(match => match.match > 0.5);
+          if (bestMatch && bestMatch.translation) {
+            resolve(bestMatch.translation);
+          } else {
+            resolve(`Translation error: No suitable matches found`);
+          }
+        } else {
+          resolve(`Translation error: ${data.responseDetails || 'Unknown error'}`);
+        }
+      } catch (error) {
+        // MyMemory API error
+        // Try to provide a more user-friendly error message
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          resolve("Network error: Please check your internet connection.");
+        } else {
+          resolve(`Translation service error: ${error.message}`);
+        }
+      }
+    });
+  });
 }
 
 // Function to save translation to history
-function saveTranslationToHistory(sourceText, translatedText, sourceLang, targetLang, confidence = null) {
+function saveTranslationToHistory(sourceText, translatedText, sourceLang, targetLang, confidence = null, usedApi = null) {
   // Don't save very short or empty translations
   if (!sourceText || sourceText.trim().length < 2 || !translatedText || translatedText.trim().length < 2) {
     return;
@@ -1113,17 +1345,17 @@ function saveTranslationToHistory(sourceText, translatedText, sourceLang, target
     targetLang: targetLang,
     timestamp: Date.now(),
     isFavorite: false,
-    confidence: confidence
+    confidence: confidence,
+    usedApi: usedApi // Store which API was used for this translation
   };
 
   // Get existing history and add new item
   chrome.storage.local.get(['translationHistory'], function(result) {
     let history = result.translationHistory || [];
 
-    // Check if this exact translation already exists
+    // Check if a very similar translation already exists (more lenient matching)
     const existingIndex = history.findIndex(item =>
-      item.sourceText === historyItem.sourceText &&
-      item.translatedText === historyItem.translatedText &&
+      item.sourceText.trim().toLowerCase() === historyItem.sourceText.trim().toLowerCase() &&
       item.sourceLang === historyItem.sourceLang &&
       item.targetLang === historyItem.targetLang
     );
@@ -1131,20 +1363,28 @@ function saveTranslationToHistory(sourceText, translatedText, sourceLang, target
     if (existingIndex !== -1) {
       // Update timestamp and move to front
       history[existingIndex].timestamp = Date.now();
+      // Also update the translated text in case it's different
+      history[existingIndex].translatedText = historyItem.translatedText;
+      history[existingIndex].confidence = historyItem.confidence;
+      history[existingIndex].usedApi = historyItem.usedApi;
       const item = history.splice(existingIndex, 1)[0];
       history.unshift(item);
     } else {
       // Add new item to the beginning
       history.unshift(historyItem);
 
-      // Limit history to 100 items
-      if (history.length > 100) {
-        history = history.slice(0, 100);
+      // Limit history to HISTORY_LIMIT items
+      if (history.length > HISTORY_LIMIT) {
+        history = history.slice(0, HISTORY_LIMIT);
       }
     }
 
     // Save updated history
-    chrome.storage.local.set({ translationHistory: history });
+    chrome.storage.local.set({ translationHistory: history }, function() {
+      if (chrome.runtime.lastError) {
+        // Error saving history to storage
+      }
+    });
   });
 }
 
@@ -1166,7 +1406,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Function to extract and translate text from the right-clicked element
 function translateElementText() {
   if (!lastRightClickedElement) {
-    console.warn('No element was right-clicked');
+    // No element was right-clicked
     return;
   }
 
@@ -1174,19 +1414,19 @@ function translateElementText() {
   const elementText = extractTextFromElement(lastRightClickedElement);
 
   if (!elementText || elementText.trim().length === 0) {
-    console.warn('No text found in the clicked element');
+    // No text found in the clicked element
     return;
   }
 
   // Get translation preferences and translate
   chrome.runtime.sendMessage({ action: "getTranslationPreferences" }, function(items) {
     if (chrome.runtime.lastError) {
-      console.error('Error getting translation preferences:', chrome.runtime.lastError);
+      // Error getting translation preferences
       return;
     }
 
     if (!items || typeof items !== 'object') {
-      console.warn('Invalid preferences response, using defaults');
+      // Invalid preferences response, using defaults
       items = {};
     }
 
@@ -1195,7 +1435,7 @@ function translateElementText() {
     const isEnabled = (typeof items.isEnabled === 'boolean') ? items.isEnabled : true;
 
     if (!isEnabled) {
-      console.log('Translation is disabled');
+      // Translation is disabled
       return;
     }
 
@@ -1218,13 +1458,20 @@ function translateElementText() {
 
           // Save successful translation to history
           if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-            saveTranslationToHistory(elementText, translation, fromLang, toLang);
+            // Attempting to save context menu translation to history
+            // Get the selected API to store with the history item
+            chrome.storage.sync.get(['selectedApi'], function(items) {
+              const usedApi = items.selectedApi || 'mymemory';
+              saveTranslationToHistory(elementText, translation, fromLang, toLang, null, usedApi);
+            });
+          } else {
+            // Not saving context menu translation to history due to translation issues
           }
         }
       })
       .catch(error => {
         if (translationId === currentTranslationId) {
-          console.error("Element translation error:", error);
+          // Element translation error
           showTooltip(x, y, "Translation failed", elementText, fromLang, toLang, true);
         }
       });
@@ -1235,7 +1482,7 @@ function translateElementText() {
 function extractTextFromElement(element) {
   if (!element) return '';
 
-  console.log({element});
+  // element
 
   // Handle input and textarea elements
   if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
@@ -1386,9 +1633,9 @@ function populateLanguageSelectors(translationBox, sourceText, translationId) {
         toLanguage: currentFromLang
       }, function() {
         if (chrome.runtime.lastError) {
-          console.error('Error saving swapped language preferences:', chrome.runtime.lastError);
+          // Error saving swapped language preferences
         } else {
-          console.log('Successfully saved swapped language preferences');
+          // Successfully saved swapped language preferences
         }
       });
 
@@ -1396,6 +1643,7 @@ function populateLanguageSelectors(translationBox, sourceText, translationId) {
       const translationTextEl = translationBox.querySelector('.translation-text');
       if (translationTextEl) {
         translationTextEl.textContent = 'Translating...';
+        translationTextEl.classList.remove('failed-translation');
       }
 
       // Get the source text from the stored data attribute (works for both text selection and context menu)
@@ -1411,19 +1659,33 @@ function populateLanguageSelectors(translationBox, sourceText, translationId) {
             // Update the tooltip with new translation
             if (translationTextEl) {
               translationTextEl.textContent = translation;
+              // Add failed translation class if needed
+              if (translation.includes('failed') || translation.includes('error') || translation.includes('limit exceeded')) {
+                translationTextEl.classList.add('failed-translation');
+              } else {
+                translationTextEl.classList.remove('failed-translation');
+              }
             }
 
             // Save the new translation to history if successful
             if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-              saveTranslationToHistory(sourceText, translation, currentToLang, currentFromLang);
+              // Attempting to save translation box translation to history
+              // Get the selected API to store with the history item
+              chrome.storage.sync.get(['selectedApi'], function(items) {
+                const usedApi = items.selectedApi || 'mymemory';
+                saveTranslationToHistory(sourceText, translation, sourceLang, targetLang, null, usedApi);
+              });
+            } else {
+              // Not saving translation box translation to history due to translation issues
             }
           }
         })
         .catch(error => {
           if (newTranslationId === currentTranslationId) {
-            console.error('Re-translation error:', error);
+            // Re-translation error
             if (translationTextEl) {
               translationTextEl.textContent = 'Translation failed';
+              translationTextEl.classList.add('failed-translation');
             }
           }
         });
@@ -1452,9 +1714,9 @@ function populateLanguageSelectors(translationBox, sourceText, translationId) {
           // Save the new source language preference
           chrome.storage.sync.set({ fromLanguage: newLang }, function() {
             if (chrome.runtime.lastError) {
-              console.error('Error saving fromLanguage preference:', chrome.runtime.lastError);
+              // Error saving fromLanguage preference
             } else {
-              console.log('Successfully saved fromLanguage preference:', newLang);
+              // Successfully saved fromLanguage preference
             }
           });
         } else {
@@ -1462,9 +1724,9 @@ function populateLanguageSelectors(translationBox, sourceText, translationId) {
           // Save the new target language preference
           chrome.storage.sync.set({ toLanguage: newLang }, function() {
             if (chrome.runtime.lastError) {
-              console.error('Error saving toLanguage preference:', chrome.runtime.lastError);
+              // Error saving toLanguage preference
             } else {
-              console.log('Successfully saved toLanguage preference:', newLang);
+              // Successfully saved toLanguage preference
             }
           });
         }
@@ -1473,6 +1735,7 @@ function populateLanguageSelectors(translationBox, sourceText, translationId) {
         const translationTextEl = translationBox.querySelector('.translation-text');
         if (translationTextEl) {
           translationTextEl.textContent = 'Translating...';
+          translationTextEl.classList.remove('failed-translation');
         }
 
         // Get the source text from the stored data attribute (works for both text selection and context menu)
@@ -1491,19 +1754,30 @@ function populateLanguageSelectors(translationBox, sourceText, translationId) {
               // Update the tooltip with new translation
               if (translationTextEl) {
                 translationTextEl.textContent = translation;
+                // Add failed translation class if needed
+                if (translation.includes('failed') || translation.includes('error') || translation.includes('limit exceeded')) {
+                  translationTextEl.classList.add('failed-translation');
+                } else {
+                  translationTextEl.classList.remove('failed-translation');
+                }
               }
 
               // Save the new translation to history if successful
               if (translation && !translation.includes('failed') && !translation.includes('error') && !translation.includes('limit exceeded')) {
-                saveTranslationToHistory(sourceText, translation, sourceLang, targetLang);
+                // Get the selected API to store with the history item
+                chrome.storage.sync.get(['selectedApi'], function(items) {
+                  const usedApi = items.selectedApi || 'mymemory';
+                  saveTranslationToHistory(sourceText, translation, sourceLang, targetLang, null, usedApi);
+                });
               }
             }
           })
           .catch(error => {
             if (newTranslationId === currentTranslationId) {
-              console.error('Re-translation error:', error);
+              // Re-translation error
               if (translationTextEl) {
                 translationTextEl.textContent = 'Translation failed';
+                translationTextEl.classList.add('failed-translation');
               }
             }
           });
@@ -1569,3 +1843,5 @@ function populateLanguageSelectors(translationBox, sourceText, translationId) {
     translationBox.appendChild(langContainer);
   });
 }
+
+// ... existing code ...

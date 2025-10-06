@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Validate critical DOM elements
   if (!fromLangSelect || !toLangSelect) {
-    console.error('Critical DOM elements not found: language select dropdowns');
+    // Critical DOM elements not found: language select dropdowns
     return;
   }
 
@@ -60,7 +60,20 @@ document.addEventListener('DOMContentLoaded', function () {
   function loadHistory() {
     chrome.storage.local.get(['translationHistory'], function(result) {
       if (chrome.runtime.lastError) {
-        console.error('Error loading translation history:', chrome.runtime.lastError);
+        // Error loading translation history
+        translationHistory = [];
+      } else {
+        translationHistory = result.translationHistory || [];
+      }
+      displayHistory(translationHistory);
+    });
+  }
+
+  // Function to refresh history from storage
+  function refreshHistory() {
+    chrome.storage.local.get(['translationHistory'], function(result) {
+      if (chrome.runtime.lastError) {
+        // Error loading translation history
         translationHistory = [];
       } else {
         translationHistory = result.translationHistory || [];
@@ -85,8 +98,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const hasMore = history.length > 10;
 
     historyList.innerHTML = recentHistory.map(item => {
+      // Check if this is a failed translation
+      const isFailedTranslation = item.translatedText.includes('failed') ||
+                                 item.translatedText.includes('error') ||
+                                 item.translatedText.includes('limit exceeded');
+
       return `
-        <div class="history-item" data-id="${item.id}">
+        <div class="history-item ${isFailedTranslation ? 'failed-translation' : ''}" data-id="${item.id}">
           <div class="history-text">
             <span class="history-source">${truncateText(item.sourceText, 20)}</span>
             <span class="history-arrow">&rarr;</span>
@@ -94,6 +112,7 @@ document.addEventListener('DOMContentLoaded', function () {
           </div>
           <div class="history-meta">
             <span class="history-languages">${item.sourceLang} &rarr; ${item.targetLang}</span>
+            ${item.usedApi ? `<span class="used-api">API: ${item.usedApi}</span>` : ''}
             <div class="history-actions-item">
               <button class="history-btn favorite ${item.isFavorite ? 'active' : ''}" data-action="favorite" data-id="${item.id}">
                 ${item.isFavorite ? '&#9733;' : '&#9734;'}
@@ -108,6 +127,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <span>${formatTimeAgo(item.timestamp)}</span>
             ${item.confidence ? `<span>Confidence: ${Math.round(item.confidence * 100)}%</span>` : ''}
           </div>
+          ${isFailedTranslation ? '<div class="failed-translation-warning">Translation failed</div>' : ''}
         </div>
       `;
     }).join('');
@@ -131,7 +151,7 @@ document.addEventListener('DOMContentLoaded', function () {
       viewAllBtn.addEventListener('click', function() {
         chrome.tabs.create({ url: chrome.runtime.getURL('history.html') }, (tab) => {
           if (chrome.runtime.lastError) {
-            console.error('Error creating new tab:', chrome.runtime.lastError);
+            // Error creating new tab
           }
         });
       });
@@ -173,8 +193,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const item = translationHistory.find(h => h.id === itemId);
     if (item) {
       item.isFavorite = !item.isFavorite;
-      chrome.storage.local.set({ translationHistory: translationHistory }, function() {
-        displayHistory(translationHistory);
+      saveHistory(translationHistory, function(limitedHistory) {
+        reloadHistory(function(updatedHistory) {
+          translationHistory = updatedHistory;
+          displayHistory(translationHistory);
+        });
       });
     }
   }
@@ -193,18 +216,19 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
     }).catch(err => {
-      console.error('Failed to copy text: ', err);
+      // Failed to copy text
       alert('Failed to copy to clipboard');
     });
   }
 
-
-
   function deleteHistoryItemConfirm(itemId) {
     if (confirm('Delete this translation from history?')) {
       translationHistory = translationHistory.filter(h => h.id !== itemId);
-      chrome.storage.local.set({ translationHistory: translationHistory }, function() {
-        displayHistory(translationHistory);
+      saveHistory(translationHistory, function(limitedHistory) {
+        reloadHistory(function(updatedHistory) {
+          translationHistory = updatedHistory;
+          displayHistory(translationHistory);
+        });
       });
     }
   }
@@ -240,7 +264,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function populateLanguages(selectElement, languages) {
     // Validate input parameters
     if (!selectElement || !languages || !Array.isArray(languages)) {
-      console.error('Invalid parameters for populateLanguages:', { selectElement, languages });
+      // Invalid parameters for populateLanguages
       return;
     }
 
@@ -253,7 +277,7 @@ document.addEventListener('DOMContentLoaded', function () {
       );
 
       if (validLanguages.length === 0) {
-        console.warn('No valid languages found, using defaults');
+        // No valid languages found, using defaults
         // Add a default option if no valid languages
         const defaultOption = document.createElement('option');
         defaultOption.value = 'en';
@@ -276,7 +300,7 @@ document.addEventListener('DOMContentLoaded', function () {
       });
 
     } catch (error) {
-      console.error('Error in populateLanguages:', error);
+      // Error in populateLanguages
     }
   }
 
@@ -284,7 +308,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function savePreferences() {
     // Validate DOM elements exist
     if (!fromLangSelect || !toLangSelect || !toggleTranslate) {
-      console.error('Required DOM elements not found for saving preferences');
+      // Required DOM elements not found for saving preferences
       return;
     }
 
@@ -319,7 +343,7 @@ document.addEventListener('DOMContentLoaded', function () {
       isEnabled: isEnabled
     }, function() {
       if (chrome.runtime.lastError) {
-        console.error('Error saving preferences:', chrome.runtime.lastError);
+        // Error saving preferences
         if (messageArea) {
           messageArea.textContent = 'Error saving preferences. Please try again.';
         }
@@ -329,10 +353,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Load saved options with proper error handling
   function loadLanguageSettings() {
-    chrome.storage.sync.get(['selectedLanguages', 'fromLanguage', 'toLanguage', 'isEnabled'], function (items) {
+    chrome.storage.sync.get(['selectedLanguages', 'fromLanguage', 'toLanguage', 'isEnabled', 'selectedApi'], function (items) {
       // Check for Chrome storage errors
       if (chrome.runtime.lastError) {
-        console.error('Chrome storage error:', chrome.runtime.lastError);
         // Use default languages if storage fails
         initializeWithDefaults();
         return;
@@ -360,7 +383,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
       // Validate DOM elements exist
       if (!fromLangSelect || !toLangSelect) {
-        console.error('Language select elements not found in DOM');
         return;
       }
 
@@ -387,7 +409,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         toggleTranslate.checked = (typeof items.isEnabled === 'boolean') ? items.isEnabled : true;
       } catch (error) {
-        console.error('Error populating language dropdowns:', error);
         initializeWithDefaults();
       }
     });
@@ -420,7 +441,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (swapLanguagesButton) {
     swapLanguagesButton.addEventListener('click', function () {
       if (!fromLangSelect || !toLangSelect) {
-        console.error('Language select elements not available for swap');
+        // Language select elements not available for swap
         return;
       }
 
@@ -429,7 +450,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       // Validate that we have valid values to swap
       if (!currentFrom || !currentTo) {
-        console.warn('Cannot swap: invalid language values');
+        // Cannot swap: invalid language values
         return;
       }
 
@@ -466,3 +487,33 @@ document.addEventListener('DOMContentLoaded', function () {
     toggleTranslate.addEventListener('change', savePreferences);
   }
 });
+
+// Add this constant at the top of the file, after the existing variable declarations
+const HISTORY_LIMIT = 500;
+
+// Helper function to limit history to HISTORY_LIMIT items
+function limitHistory(history) {
+  if (history.length > HISTORY_LIMIT) {
+    return history.slice(0, HISTORY_LIMIT);
+  }
+  return history;
+}
+
+// Helper function to save history with proper limiting
+function saveHistory(newHistory, callback) {
+  const limitedHistory = limitHistory(newHistory);
+  chrome.storage.local.set({ translationHistory: limitedHistory }, function() {
+    if (chrome.runtime.lastError) {
+      // Error saving history to storage
+    }
+    if (callback) callback(limitedHistory);
+  });
+}
+
+// Helper function to reload history from storage
+function reloadHistory(callback) {
+  chrome.storage.local.get(['translationHistory'], function(result) {
+    const translationHistory = result.translationHistory || [];
+    if (callback) callback(translationHistory);
+  });
+}

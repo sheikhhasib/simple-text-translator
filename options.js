@@ -3,6 +3,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const searchInput = document.getElementById('search-input');
   const saveButton = document.getElementById('save-button');
   const messageArea = document.getElementById('message-area');
+  const apiMymemory = document.getElementById('api-mymemory');
+  const apiChrome = document.getElementById('api-chrome');
+  const apiDescription = document.getElementById('api-description');
+  const apiWarning = document.getElementById('api-warning');
 
   // Use the centralized language mapping
   const allLanguages = (typeof window.LanguageMap !== 'undefined')
@@ -10,10 +14,101 @@ document.addEventListener('DOMContentLoaded', function () {
     : [];
 
   let selectedLanguages = [];
+  let selectedApi = 'mymemory'; // Default to MyMemory API
+
+  // Function to get all languages (no filtering)
+  function getFilteredLanguages() {
+    // Show all languages regardless of API selection
+    return allLanguages;
+  }
+
+  // Check if Chrome's APIs are available
+  function checkChromeApiAvailability() {
+    const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+    const chromeVersionMatch = navigator.userAgent.match(/Chrome\/(\d+)/);
+    const chromeVersion = isChrome && chromeVersionMatch ? parseInt(chromeVersionMatch[1]) : 0;
+
+    const isTranslatorAvailable = 'Translator' in self;
+    const isLanguageDetectorAvailable = 'LanguageDetector' in self;
+
+    const isChromeApiAvailable = isChrome && chromeVersion >= 138 && isTranslatorAvailable && isLanguageDetectorAvailable;
+
+    // Show warning message if API is not available
+    if (apiWarning) {
+      if (!isChromeApiAvailable) {
+        let reason = "";
+        if (!isChrome) {
+          reason = "Not using Chrome browser. ";
+        } else if (chromeVersion < 138) {
+          reason = `Chrome version ${chromeVersion} is too old (requires 138+). `;
+        } else if (!isTranslatorAvailable) {
+          reason = "Translator API not available in this Chrome version. ";
+        } else if (!isLanguageDetectorAvailable) {
+          reason = "Language Detector API not available in this Chrome version. ";
+        }
+        apiWarning.textContent = "Chrome Built-in Translator API not available: " + reason + "Falling back to MyMemory API.";
+        apiWarning.style.display = 'block';
+      } else {
+        apiWarning.style.display = 'none';
+      }
+    }
+
+    if (apiChrome) {
+      if (!isChromeApiAvailable) {
+        apiChrome.disabled = true;
+        let reason = "";
+        if (!isChrome) {
+          reason = "Not using Chrome browser";
+        } else if (chromeVersion < 138) {
+          reason = `Chrome version ${chromeVersion} is too old, requires 138+`;
+        } else if (!isTranslatorAvailable) {
+          reason = "Translator API not available";
+        } else if (!isLanguageDetectorAvailable) {
+          reason = "Language Detector API not available";
+        }
+        apiChrome.parentElement.title = `Chrome Built-in Translator API not available: ${reason}`;
+      } else {
+        apiChrome.disabled = false;
+        apiChrome.parentElement.title = "";
+      }
+    }
+
+    return isChromeApiAvailable;
+  }
+
+  // Update API description when selection changes
+  function updateApiDescription() {
+    if (apiMymemory.checked) {
+      apiDescription.textContent = 'Using MyMemory API - Requires internet connection';
+      selectedApi = 'mymemory';
+      // Re-render language list with all languages
+      renderLanguages(searchInput ? searchInput.value : '');
+    } else if (apiChrome.checked) {
+      if (checkChromeApiAvailability()) {
+        apiDescription.textContent = 'Using Chrome Built-in Translator - Works offline (Chrome 138+)';
+        selectedApi = 'chrome';
+        // Re-render language list with all languages (no filtering)
+        renderLanguages(searchInput ? searchInput.value : '');
+      } else {
+        apiDescription.textContent = 'Chrome Built-in Translator not available - Requires Chrome 138+';
+        // Automatically switch back to MyMemory if Chrome API is not available
+        apiMymemory.checked = true;
+        selectedApi = 'mymemory';
+        updateApiDescription();
+      }
+    }
+  }
+
+  // Add event listeners for API selection
+  if (apiMymemory) {
+    apiMymemory.addEventListener('change', updateApiDescription);
+  }
+  if (apiChrome) {
+    apiChrome.addEventListener('change', updateApiDescription);
+  }
 
   function renderLanguages(filter = '') {
     if (!languageListContainer) {
-      console.error('Language list container not found');
       return;
     }
 
@@ -21,7 +116,10 @@ document.addEventListener('DOMContentLoaded', function () {
       languageListContainer.innerHTML = '';
       const lowerCaseFilter = filter.toLowerCase();
 
-      const sortedLanguages = [...allLanguages].sort((a, b) => {
+      // Get all languages (no filtering based on API)
+      const languages = getFilteredLanguages();
+
+      const sortedLanguages = [...languages].sort((a, b) => {
         const aIsSelected = selectedLanguages.some(l => l.code === a.code);
         const bIsSelected = selectedLanguages.some(l => l.code === b.code);
         return bIsSelected - aIsSelected;
@@ -60,7 +158,6 @@ document.addEventListener('DOMContentLoaded', function () {
       });
 
     } catch (error) {
-      console.error('Error rendering languages:', error);
       if (messageArea) {
         messageArea.textContent = 'Error displaying language options.';
         messageArea.style.color = 'red';
@@ -72,16 +169,18 @@ document.addEventListener('DOMContentLoaded', function () {
     try {
       // selectedLanguages is already updated via checkbox event listeners
 
-      chrome.storage.sync.set({ 'selectedLanguages': selectedLanguages }, function () {
+      chrome.storage.sync.set({
+        'selectedLanguages': selectedLanguages,
+        'selectedApi': selectedApi
+      }, function () {
         if (chrome.runtime.lastError) {
-          console.error('Error saving languages:', chrome.runtime.lastError);
           if (messageArea) {
             messageArea.textContent = 'Error saving languages. Please try again.';
             messageArea.style.color = 'red';
           }
         } else {
           if (messageArea) {
-            messageArea.textContent = 'Languages saved!';
+            messageArea.textContent = 'Languages and API settings saved!';
             messageArea.style.color = 'green';
           }
         }
@@ -92,7 +191,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
     } catch (error) {
-      console.error('Error in saveSelectedLanguages:', error);
       if (messageArea) {
         messageArea.textContent = 'Error saving languages. Please try again.';
         messageArea.style.color = 'red';
@@ -110,9 +208,10 @@ document.addEventListener('DOMContentLoaded', function () {
     saveButton.addEventListener('click', saveSelectedLanguages);
   }
 
-  chrome.storage.sync.get('selectedLanguages', function (data) {
+  // Load saved settings
+  chrome.storage.sync.get(['selectedLanguages', 'selectedApi'], function (data) {
     if (chrome.runtime.lastError) {
-      console.error('Error loading saved languages:', chrome.runtime.lastError);
+      // Handle error silently
     }
 
     const defaultLanguages = [
@@ -135,10 +234,34 @@ document.addEventListener('DOMContentLoaded', function () {
       selectedLanguages = defaultLanguages;
     }
 
+    // Set API selection
+    if (data.selectedApi) {
+      selectedApi = data.selectedApi;
+      if (selectedApi === 'chrome' && apiChrome) {
+        // Check if Chrome API is available before selecting it
+        if (checkChromeApiAvailability()) {
+          apiChrome.checked = true;
+        } else {
+          // Fall back to MyMemory if Chrome API is not available
+          apiMymemory.checked = true;
+          selectedApi = 'mymemory';
+        }
+      } else if (apiMymemory) {
+        apiMymemory.checked = true; // Default to MyMemory
+      }
+    } else {
+      // Default to MyMemory API
+      if (apiMymemory) {
+        apiMymemory.checked = true;
+      }
+    }
+
+    // Update API description
+    updateApiDescription();
+
     try {
       renderLanguages();
     } catch (error) {
-      console.error('Error rendering languages:', error);
       if (messageArea) {
         messageArea.textContent = 'Error loading language options.';
         messageArea.style.color = 'red';
